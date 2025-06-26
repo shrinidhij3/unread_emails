@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 import json
@@ -145,19 +146,38 @@ async def get_sync_service() -> EmailSyncService:
 async def startup():
     global _db_pool
     try:
+        # Get database configuration from environment variables
+        db_config = {
+            'user': os.getenv('DB_USER', 'postgres'),
+            'password': os.getenv('DB_PASSWORD', ''),
+            'database': os.getenv('DB_NAME', 'railway'),
+            'host': os.getenv('DB_HOST', 'shuttle.proxy.rlwy.net'),
+            'port': int(os.getenv('DB_PORT', '52485')),
+            'min_size': 1,
+            'max_size': 10,
+            'ssl': 'require',  # Force SSL for Railway
+            'command_timeout': 30,
+            'server_settings': {
+                'application_name': 'email_service',
+                'search_path': 'public'
+            }
+        }
+        
+        logger.info(f"Connecting to database at {db_config['host']}:{db_config['port']}")
+        
         # Initialize database connection pool
-        _db_pool = await asyncpg.create_pool(
-            user="your_db_user",
-            password="your_db_password",
-            database="your_db_name",
-            host="localhost",
-            port=5432,
-            min_size=1,
-            max_size=10
-        )
-        logger.info("Database connection pool initialized")
+        _db_pool = await asyncpg.create_pool(**db_config)
+        
+        # Test the connection
+        async with _db_pool.acquire() as conn:
+            version = await conn.fetchval('SELECT version()')
+            logger.info(f"Successfully connected to PostgreSQL: {version}")
+            
+        logger.info("Database connection pool initialized successfully")
+        
     except Exception as e:
         logger.error(f"Failed to initialize database connection pool: {e}")
+        logger.error("Please check your database configuration and ensure the database is accessible")
         raise
 
 @app.on_event("shutdown")

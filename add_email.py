@@ -1,20 +1,32 @@
 import asyncio
 import asyncpg
+import os
 from datetime import datetime
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 async def add_email_account():
     """Add a new email account to the credentials_email table."""
     conn = None
     try:
-        # Database configuration from imap_poller.py
+        # Database configuration from environment variables
         db_config = {
-            "user": "postgres",
-            "password": "RTYUZhgxpGDcemmsvBKKyoeaGrvkGywz",
-            "database": "railway",
-            "host": "shuttle.proxy.rlwy.net",
-            "port": 52485,
-            "command_timeout": 10
+            "user": os.getenv("DB_USER", "postgres"),
+            "password": os.getenv("DB_PASSWORD"),
+            "database": os.getenv("DB_NAME", "railway"),
+            "host": os.getenv("DB_HOST", "shuttle.proxy.rlwy.net"),
+            "port": int(os.getenv("DB_PORT", "52485")),
+            "command_timeout": int(os.getenv("DB_COMMAND_TIMEOUT", "10")),
+            "ssl": os.getenv("DB_SSL", "require")
         }
+        
+        # Verify required environment variables are set
+        if not db_config["password"]:
+            raise ValueError("DB_PASSWORD environment variable is not set")
+        if not db_config["host"]:
+            raise ValueError("DB_HOST environment variable is not set")
         
         # Get email account details from user
         print("\n📧 Add New Email Account")

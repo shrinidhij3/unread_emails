@@ -8,7 +8,7 @@ services:
     region: singapore  # or choose another region closer to your users
     plan: free  # or 'starter', 'standard', etc. for production
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn --worker-class=uvicorn.workers.UvicornWorker --workers=2 email_api:app
+    startCommand: gunicorn --worker-class=uvicorn.workers.UvicornWorker --workers=2 --bind 0.0.0.0:$PORT email_api:app
     envVars:
       - key: PYTHON_VERSION
         value: 3.9.0
@@ -17,9 +17,25 @@ services:
       - key: ENVIRONMENT
         value: production
       - key: PORT
-        value: 10000
+        value: 8000
       - key: GUNICORN_CMD_ARGS
         value: "--workers=2 --worker-class=uvicorn.workers.UvicornWorker --timeout 120"
+      # Database configuration
+      - key: DB_USER
+        value: postgres
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: your-database-name
+          property: connectionString
+          envVar: DATABASE_URL
+      - key: DB_NAME
+        value: railway
+      - key: DB_HOST
+        value: shuttle.proxy.rlwy.net
+      - key: DB_PORT
+        value: "52485"
+      - key: DB_SSL
+        value: "require"
     healthCheckPath: /healthz
     autoDeploy: yes
     
@@ -37,4 +53,20 @@ services:
         value: 1
       - key: ENVIRONMENT
         value: production
+      # Database configuration for worker
+      - key: DB_USER
+        value: postgres
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: your-database-name
+          property: connectionString
+          envVar: DATABASE_URL
+      - key: DB_NAME
+        value: railway
+      - key: DB_HOST
+        value: shuttle.proxy.rlwy.net
+      - key: DB_PORT
+        value: "52485"
+      - key: DB_SSL
+        value: "require"
     autoDeploy: yes

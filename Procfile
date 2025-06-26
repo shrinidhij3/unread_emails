@@ -1,2 +1,2 @@
-web: python -m gunicorn --worker-class=uvicorn.workers.UvicornWorker --workers=2 email_api:app
+web: gunicorn --worker-class=uvicorn.workers.UvicornWorker --workers=2 --bind 0.0.0.0:$PORT email_api:app
 worker: python imap_poller.py

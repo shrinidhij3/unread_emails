@@ -1,2 +1,2 @@
-web: gunicorn --config gunicorn_config.py email_api:app
+web: python -m gunicorn --worker-class=uvicorn.workers.UvicornWorker --workers=2 email_api:app
 worker: python imap_poller.py

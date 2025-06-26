@@ -1,0 +1,40 @@
+# Render Blueprint for Infrastructure as Code
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: email-auto-responder
+    env: python
+    region: singapore  # or choose another region closer to your users
+    plan: free  # or 'starter', 'standard', etc. for production
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --worker-class=uvicorn.workers.UvicornWorker --workers=2 email_api:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9.0
+      - key: PYTHONUNBUFFERED
+        value: 1
+      - key: ENVIRONMENT
+        value: production
+      - key: PORT
+        value: 10000
+      - key: GUNICORN_CMD_ARGS
+        value: "--workers=2 --worker-class=uvicorn.workers.UvicornWorker --timeout 120"
+    healthCheckPath: /healthz
+    autoDeploy: yes
+    
+  - type: worker
+    name: email-poller
+    env: python
+    region: singapore
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python imap_poller.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9.0
+      - key: PYTHONUNBUFFERED
+        value: 1
+      - key: ENVIRONMENT
+        value: production
+    autoDeploy: yes

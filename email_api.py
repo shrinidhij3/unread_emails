@@ -411,11 +411,16 @@ async def list_providers():
         })
     return providers
 
-# Health check endpoint
-@app.get("/health")
+# Health check endpoints
+@app.get("/")
+async def root_check():
+    """Root endpoint for Render health checks"""
+    return {"status": "ok", "message": "API is running"}
+
+@app.get("/healthz")
 async def health_check():
-    """Health check endpoint"""
-    return {"status": "ok", "timestamp": datetime.utcnow()}
+    """Health check endpoint for Render and other platforms"""
+    return {"status": "ok", "message": "Health check passed"}
 
 # Main entry point
 if __name__ == "__main__":

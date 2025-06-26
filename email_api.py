@@ -146,24 +146,54 @@ async def get_sync_service() -> EmailSyncService:
 async def startup():
     global _db_pool
     try:
-        # Get database configuration from environment variables
-        db_config = {
-            'user': os.getenv('DB_USER', 'postgres'),
-            'password': os.getenv('DB_PASSWORD', ''),
-            'database': os.getenv('DB_NAME', 'railway'),
-            'host': os.getenv('DB_HOST', 'shuttle.proxy.rlwy.net'),
-            'port': int(os.getenv('DB_PORT', '52485')),
-            'min_size': 1,
-            'max_size': 10,
-            'ssl': 'require',  # Force SSL for Railway
-            'command_timeout': 30,
-            'server_settings': {
-                'application_name': 'email_service',
-                'search_path': 'public'
-            }
-        }
+        # First try to use DATABASE_URL from Render
+        database_url = os.getenv('DATABASE_URL')
         
-        logger.info(f"Connecting to database at {db_config['host']}:{db_config['port']}")
+        if database_url:
+            # Parse the database URL
+            from urllib.parse import urlparse
+            
+            # Handle postgres:// URL format
+            if database_url.startswith('postgres://'):
+                database_url = database_url.replace('postgres://', 'postgresql://', 1)
+            
+            db_config = {
+                'dsn': database_url,
+                'min_size': 1,
+                'max_size': 10,
+                'command_timeout': 30,
+                'server_settings': {
+                    'application_name': 'email_service',
+                    'search_path': 'public'
+                }
+            }
+        else:
+            # Fall back to individual environment variables for local development
+            db_config = {
+                'user': os.getenv('DB_USER', 'postgres'),
+                'password': os.getenv('DB_PASSWORD', ''),
+                'database': os.getenv('DB_NAME', 'railway'),
+                'host': os.getenv('DB_HOST', 'shuttle.proxy.rlwy.net'),
+                'port': int(os.getenv('DB_PORT', '52485')),
+                'min_size': 1,
+                'max_size': 10,
+                'ssl': 'require',  # Force SSL for Railway
+                'command_timeout': 30,
+                'server_settings': {
+                    'application_name': 'email_service',
+                    'search_path': 'public'
+                }
+            }
+        
+        # Log connection details (without logging credentials)
+        if 'dsn' in db_config:
+            logger.info("Connecting to database using DATABASE_URL")
+            # Parse the DSN to get host and port for logging (without credentials)
+            from urllib.parse import urlparse
+            parsed = urlparse(db_config['dsn'])
+            logger.info(f"Database host: {parsed.hostname}, port: {parsed.port or 5432}")
+        else:
+            logger.info(f"Connecting to database at {db_config.get('host')}:{db_config.get('port')}")
         
         # Initialize database connection pool
         _db_pool = await asyncpg.create_pool(**db_config)
@@ -172,6 +202,11 @@ async def startup():
         async with _db_pool.acquire() as conn:
             version = await conn.fetchval('SELECT version()')
             logger.info(f"Successfully connected to PostgreSQL: {version}")
+            
+            # Log database name and current user for verification
+            db_name = await conn.fetchval('SELECT current_database()')
+            db_user = await conn.fetchval('SELECT current_user')
+            logger.info(f"Connected to database: {db_name} as user: {db_user}")
             
         logger.info("Database connection pool initialized successfully")
         

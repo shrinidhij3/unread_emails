@@ -7,7 +7,7 @@ import base64
 import hashlib
 import re
 from dataclasses import dataclass, field
-from typing import Dict, Optional, List, Tuple, Any, Callable, TypeVar, Type
+from typing import Dict, Optional, List, Tuple, Any, Callable, TypeVar, Type, Union
 from datetime import datetime, timedelta, timezone
 from enum import Enum, auto
 from cryptography.hazmat.primitives import hashes

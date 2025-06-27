@@ -457,6 +457,27 @@ async def healthz_check():
     """Standard health check endpoint for Kubernetes and other platforms"""
     return {"status": "ok"}
 
+@app.post("/trigger-polling")
+async def trigger_polling():
+    """
+    Trigger manual email polling
+    This endpoint can be called by an external cron job service
+    """
+    try:
+        # Import the main function from imap_poller
+        from imap_poller import main as run_imap_poller
+        
+        # Run the poller in a separate thread to avoid blocking
+        import threading
+        thread = threading.Thread(target=asyncio.run, args=(run_imap_poller(),))
+        thread.daemon = True
+        thread.start()
+        
+        return {"status": "success", "message": "Email polling started in background"}
+    except Exception as e:
+        logger.error(f"Error triggering email polling: {str(e)}")
+        return {"status": "error", "message": str(e)}
+
 def format_mailing_address(address: Optional[MailingAddress] = None) -> str:
     """Format a mailing address from a MailingAddress model as HTML."""
     if not address:

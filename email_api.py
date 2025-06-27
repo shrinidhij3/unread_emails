@@ -452,6 +452,11 @@ async def health_check():
     """Health check endpoint for Render and other platforms"""
     return {"status": "healthy"}
 
+@app.get("/healthz")
+async def healthz_check():
+    """Standard health check endpoint for Kubernetes and other platforms"""
+    return {"status": "ok"}
+
 def format_mailing_address(address: Optional[MailingAddress] = None) -> str:
     """Format a mailing address from a MailingAddress model as HTML."""
     if not address:

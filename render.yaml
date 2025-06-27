@@ -20,24 +20,13 @@ services:
         value: 8000
       - key: GUNICORN_CMD_ARGS
         value: "--workers=2 --worker-class=uvicorn.workers.UvicornWorker --timeout 120"
-      # Database configuration
-      - key: DB_USER
-        value: postgres
-      - key: DB_PASSWORD
-        fromDatabase:
-          name: your-database-name
+      - key: DATABASE_URL
+        fromService:
+          name: email-db
+          type: postgres
           property: connectionString
-          envVar: DATABASE_URL
-      - key: DB_NAME
-        value: railway
-      - key: DB_HOST
-        value: shuttle.proxy.rlwy.net
-      - key: DB_PORT
-        value: "52485"
-      - key: DB_SSL
-        value: "require"
-    healthCheckPath: /healthz
-    autoDeploy: yes
+    healthCheckPath: /health
+    autoDeploy: true
     
   - type: worker
     name: email-poller

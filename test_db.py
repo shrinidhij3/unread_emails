@@ -10,22 +10,9 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-# Build connection string from environment variables
-def get_database_url():
-    """Construct database URL from environment variables."""
-    return "postgresql://{user}:{password}@{host}:{port}/{database}".format(
-        user=os.getenv("DB_USER", "postgres"),
-        password=os.getenv("DB_PASSWORD", ""),
-        host=os.getenv("DB_HOST", "localhost"),
-        port=os.getenv("DB_PORT", "5432"),
-        database=os.getenv("DB_NAME", "railway")
-    )
-
-# Get database URL
-DATABASE_URL = get_database_url()
-
+# Build connection string from environment variable
 async def test_connection():
-    print("\n🔍 Testing database connection at")
+    """Test database connection with DATABASE_URL environment variable."""
     print(datetime.now())
     print("=" * 50)
     

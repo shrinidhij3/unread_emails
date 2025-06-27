@@ -8,20 +8,39 @@ from dotenv import load_dotenv
 load_dotenv()
 
 async def add_email_account():
+    """Add a new email account to the credentials_email table."""
     conn = None
     try:
-        # Database configuration from environment variables
-        db_config = {
-            "user": os.getenv("DB_USER", "postgres"),
-            "password": os.getenv("DB_PASSWORD"),
-            "database": os.getenv("DB_NAME", "railway"),
-            "host": os.getenv("DB_HOST"),
-            "port": int(os.getenv("DB_PORT", "5432")),
-            "command_timeout": int(os.getenv("DB_COMMAND_TIMEOUT", "10"))
-        }
-        
+        # Get database URL from environment
+        database_url = os.getenv("DATABASE_URL")
+        if not database_url:
+            # Fallback to individual variables if DATABASE_URL is not set
+            db_config = {
+                "user": os.getenv("DB_USER", "postgres"),
+                "password": os.getenv("DB_PASSWORD"),
+                "database": os.getenv("DB_NAME", "railway"),
+                "host": os.getenv("DB_HOST"),
+                "port": int(os.getenv("DB_PORT", "5432")),
+                "command_timeout": int(os.getenv("DB_COMMAND_TIMEOUT", "10")),
+                "ssl": os.getenv("DB_SSL", "require")
+            }
+            
+            # Verify required environment variables are set
+            if not db_config["password"]:
+                raise ValueError("DB_PASSWORD environment variable is not set")
+            if not db_config["host"]:
+                raise ValueError("DB_HOST environment variable is not set")
+                
+            # Convert to connection string
+            database_url = f"postgresql://{db_config['user']}:{db_config['password']}@{db_config['host']}:{db_config['port']}/{db_config['database']}"
+            
+        # Handle different URL formats
+        if database_url.startswith('postgres://'):
+            database_url = database_url.replace('postgres://', 'postgresql://', 1)
+            
+        # Connect using the database URL
         print("🔍 Connecting to the database...")
-        conn = await asyncpg.connect(**db_config)
+        conn = await asyncpg.connect(dsn=database_url)
         
         # First, check if the table exists and get its structure
         print("\n📋 Checking table structure...")

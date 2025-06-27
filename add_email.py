@@ -11,20 +11,37 @@ async def add_email_account():
     """Add a new email account to the credentials_email table."""
     conn = None
     try:
-        # Database configuration from environment variables
-        db_config = {
-            "user": os.getenv("DB_USER", "postgres"),
-            "password": os.getenv("DB_PASSWORD"),
-            "database": os.getenv("DB_NAME", "railway"),
-            "host": os.getenv("DB_HOST", "shuttle.proxy.rlwy.net"),
-            "port": int(os.getenv("DB_PORT", "52485")),
-            "command_timeout": int(os.getenv("DB_COMMAND_TIMEOUT", "10")),
-            "ssl": os.getenv("DB_SSL", "require")
-        }
+        # Get database URL from environment
+        database_url = os.getenv("DATABASE_URL")
+        if not database_url:
+            raise ValueError("DATABASE_URL environment variable is not set")
+            
+        # Parse the database URL
+        from urllib.parse import urlparse, parse_qs
         
-        # Verify required environment variables are set
-        if not db_config["password"]:
-            raise ValueError("DB_PASSWORD environment variable is not set")
+        # Handle different URL formats
+        if database_url.startswith('postgres://'):
+            database_url = database_url.replace('postgres://', 'postgresql://', 1)
+            
+        result = urlparse(database_url)
+        username = result.username
+        password = result.password
+        database = result.path[1:]  # Remove leading '/'
+        hostname = result.hostname
+        port = result.port or 5432
+        
+        # Parse query parameters for SSL
+        query = parse_qs(result.query)
+        ssl_mode = 'require' if query.get('sslmode', [''])[0] == 'require' else None
+        
+        db_config = {
+            "user": username,
+            "password": password,
+            "database": database,
+            "host": hostname,
+            "port": port,
+            "ssl": ssl_mode
+        }
         if not db_config["host"]:
             raise ValueError("DB_HOST environment variable is not set")
         

@@ -316,13 +316,22 @@ def extract_email_body(message) -> str:
 
 async def get_db_pool():
     """Create a connection pool for database operations with proper configuration."""
+    # Get database URL from environment
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        raise ValueError("DATABASE_URL environment variable is not set")
+    
+    # Handle different URL formats
+    if database_url.startswith('postgres://'):
+        database_url = database_url.replace('postgres://', 'postgresql://', 1)
+    
+    # Create connection pool using the URL
     pool = await asyncpg.create_pool(
-        **{k: v for k, v in DB_CONFIG.items() 
-           if k not in ['min_size', 'max_size', 'max_queries', 'max_inactive_connection_lifetime']},
-        min_size=DB_CONFIG['min_size'],
-        max_size=DB_CONFIG['max_size'],
-        max_queries=DB_CONFIG['max_queries'],
-        max_inactive_connection_lifetime=DB_CONFIG['max_inactive_connection_lifetime']
+        dsn=database_url,
+        min_size=DB_CONFIG.get('min_size', 1),
+        max_size=DB_CONFIG.get('max_size', 10),
+        max_queries=DB_CONFIG.get('max_queries', 50000),
+        max_inactive_connection_lifetime=DB_CONFIG.get('max_inactive_connection_lifetime', 300.0)
     )
     
     # Initialize database schema

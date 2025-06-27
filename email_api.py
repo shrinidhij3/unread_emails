@@ -174,56 +174,36 @@ async def get_sync_service() -> EmailSyncService:
 # Startup and shutdown events
 @app.on_event("startup")
 async def startup():
-    global _db_pool
+    """Initialize database connection and services."""
+    global _db_pool, _crypto_service, _account_manager, _sync_service
+    
     try:
-        # First try to use DATABASE_URL from Render
-        database_url = os.getenv('DATABASE_URL')
-        
-        if database_url:
-            # Parse the database URL
-            from urllib.parse import urlparse
+        # Get database configuration from environment variables
+        database_url = os.getenv("DATABASE_URL")
+        if not database_url:
+            raise ValueError("DATABASE_URL environment variable is not set")
             
-            # Handle postgres:// URL format
-            if database_url.startswith('postgres://'):
-                database_url = database_url.replace('postgres://', 'postgresql://', 1)
-            
-            db_config = {
-                'dsn': database_url,
-                'min_size': 1,
-                'max_size': 10,
-                'command_timeout': 30,
-                'server_settings': {
-                    'application_name': 'email_service',
-                    'search_path': 'public'
-                }
-            }
-        else:
-            # Fall back to individual environment variables for local development
-            db_config = {
-                'user': os.getenv('DB_USER', 'postgres'),
-                'password': os.getenv('DB_PASSWORD', ''),
-                'database': os.getenv('DB_NAME', 'railway'),
-                'host': os.getenv('DB_HOST', 'shuttle.proxy.rlwy.net'),
-                'port': int(os.getenv('DB_PORT', '52485')),
-                'min_size': 1,
-                'max_size': 10,
-                'ssl': 'require',  # Force SSL for Railway
-                'command_timeout': 30,
-                'server_settings': {
-                    'application_name': 'email_service',
-                    'search_path': 'public'
-                }
-            }
+        # Handle different URL formats
+        if database_url.startswith('postgres://'):
+            database_url = database_url.replace('postgres://', 'postgresql://', 1)
         
-        # Log connection details (without logging credentials)
-        if 'dsn' in db_config:
-            logger.info("Connecting to database using DATABASE_URL")
-            # Parse the DSN to get host and port for logging (without credentials)
-            from urllib.parse import urlparse
-            parsed = urlparse(db_config['dsn'])
-            logger.info(f"Database host: {parsed.hostname}, port: {parsed.port or 5432}")
-        else:
-            logger.info(f"Connecting to database at {db_config.get('host')}:{db_config.get('port')}")
+        # Parse the URL to extract components for logging
+        from urllib.parse import urlparse
+        parsed = urlparse(database_url)
+        
+        # Create configuration for connection pool
+        db_config = {
+            "dsn": database_url,
+            "min_size": 1,
+            "max_size": 10,
+            "max_queries": 50000,
+            "max_inactive_connection_lifetime": 300.0,
+            "ssl": "require"  # Force SSL for security
+        }
+        
+        # Log connection details (without credentials)
+        logger.info("Connecting to database using DATABASE_URL")
+        logger.info(f"Database host: {parsed.hostname}, port: {parsed.port or 5432}")
         
         # Initialize database connection pool
         _db_pool = await asyncpg.create_pool(**db_config)

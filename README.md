@@ -39,12 +39,15 @@ A robust and flexible email synchronization service that supports multiple email
 4. Set up environment variables:
    Create a `.env` file in the project root with the following variables:
    ```
-   # Database
-   DB_HOST=localhost
-   DB_PORT=5432
-   DB_NAME=email_service
-   DB_USER=postgres
-   DB_PASSWORD=your_secure_password
+   # Database (preferred method - single URL)
+   DATABASE_URL=postgresql://username:password@localhost:5432/email_service
+   
+   # OR use individual variables (for backward compatibility)
+   # DB_HOST=localhost
+   # DB_PORT=5432
+   # DB_NAME=email_service
+   # DB_USER=postgres
+   # DB_PASSWORD=your_secure_password
    
    # Encryption
    ENCRYPTION_KEY=your_secure_encryption_key

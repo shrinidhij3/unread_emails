@@ -29,7 +29,7 @@ services:
     autoDeploy: true
     
   - type: cron
-    name: email-poller-cron
+    name: email-poller-cron  # Updated: 
     env: python
     region: singapore
     plan: free

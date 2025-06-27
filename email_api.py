@@ -453,7 +453,7 @@ async def health_check():
     return {"status": "healthy"}
 
 def format_mailing_address(address: Optional[MailingAddress] = None) -> str:
-    """Format a mailing address from a MailingAddress model."""
+    """Format a mailing address from a MailingAddress model as HTML."""
     if not address:
         return ""
     
@@ -477,8 +477,9 @@ def format_mailing_address(address: Optional[MailingAddress] = None) -> str:
         parts.append(", ".join(city_parts))
     if address.country:
         parts.append(address.country)
-        
-    return "\n".join(parts)
+    
+    # Join with HTML line breaks
+    return "<br>".join(parts)
 
 # Email sending endpoint
 @app.post("/send-email")
@@ -542,7 +543,7 @@ async def send_email(email_data: EmailRequest):
                     <p style="margin-top: 30px; font-size: 12px; color: #777; border-top: 1px solid #eee; padding-top: 10px;">
                         <a href="mailto:{reply_to}?subject=Unsubscribe" style="color: #0066cc; text-decoration: none;">Unsubscribe</a>
                         <span style="color: #ddd; margin: 0 10px;">|</span>
-                        {formatted_address.replace('\\n', '<br>')}
+                        {formatted_address}
                     </p>
                 </div>
             </body>
@@ -591,8 +592,10 @@ async def send_email(email_data: EmailRequest):
     except Exception as e:
         import traceback
         error_type = type(e).__name__
-        error_msg = f"Error Type: {error_type}\nError Message: {str(e)}"
-        logger.error(f"Email sending failed: {error_msg}\n{traceback.format_exc()}")
+        error_msg = f"Error Type: {error_type}"
+        error_msg += f"\nError Message: {str(e)}"
+        logger.error(f"Email sending failed: {error_msg}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=500,
             detail={

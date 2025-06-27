@@ -110,11 +110,13 @@ async def add_email_account():
             datetime.now()
         )
         
-        print(f"\n✅ Successfully added email account: {email}")
+        print("\n✅ Successfully added email account:")
+        print(email)
         print("\nNote: The password is stored in plain text. In production, ensure to encrypt it.")
         
     except Exception as e:
-        print(f"\n❌ Error: {e}")
+        print("\n❌ Error:")
+        print(e)
     finally:
         if conn:
             await conn.close()

@@ -60,7 +60,8 @@ async def add_email_account():
                 for k, v in sample.items():
                     print(f"{k}: {v}")
         except Exception as e:
-            print(f"\n⚠️  Could not fetch sample row: {e}")
+            print("\n⚠️  Could not fetch sample row:")
+            print(e)
         
         # Ask user if they want to add a new account
         print("\nWould you like to add a new email account? (y/n): ")
@@ -82,7 +83,8 @@ async def add_email_account():
             )
             
             if exists:
-                print(f"\n❌ Account with email {email} already exists")
+                print("\n❌ Account with email already exists:")
+                print(email)
                 return
                 
             # Insert new account
@@ -91,13 +93,16 @@ async def add_email_account():
                 VALUES ($1, $2, $3, $4)
             ''', email, password, datetime.now(), datetime.now())
             
-            print(f"\n✅ Successfully added email account: {email}")
+            print("\n✅ Successfully added email account:")
+            print(email)
             
         except Exception as e:
-            print(f"\n❌ Error adding email account: {e}")
+            print("\n❌ Error adding email account:")
+            print(e)
             
     except Exception as e:
-        print(f"\n❌ Error: {e}")
+        print("\n❌ Error:")
+        print(e)
     finally:
         if conn:
             await conn.close()

@@ -25,7 +25,8 @@ def get_database_url():
 DATABASE_URL = get_database_url()
 
 async def test_connection():
-    print(f"\n🔍 Testing database connection at {datetime.now()}")
+    print("\n🔍 Testing database connection at")
+    print(datetime.now())
     print("=" * 50)
     
     # Parse the connection URL

@@ -844,7 +844,8 @@ async def process_inbox(cred, pool):
         return
 
     try:
-        print(f"\n🔍 Processing email: {email_address}")
+        print("\n🔍 Processing email:")
+        print(email_address)
         print(f"   Connecting to {host}:{port}...")
         
         # Connect to IMAP server with enhanced error handling
@@ -1072,7 +1073,8 @@ async def main():
         
         while True:
             cycle_start = time.time()
-            print(f"\n🔄 Starting new poll cycle at {datetime.now().isoformat()}")
+            print("\n🔄 Starting new poll cycle at")
+            print(datetime.now().isoformat())
             
             try:
                 # Fetch credentials from database
@@ -1120,13 +1122,15 @@ async def main():
                 
             except Exception as e:
                 error_msg = f"Error in main loop: {str(e)}"
-                print(f"\n⚠️  {error_msg}")
+                print("\n⚠️  ")
+                print(error_msg)
                 await log_error(pool, 'system', 'main_loop_error', error_msg)
                 await asyncio.sleep(60)  # Wait a bit before retrying
                 
     except Exception as e:
         error_msg = f"Fatal error: {str(e)}"
-        print(f"\n❌ {error_msg}")
+        print("\n❌ ")
+        print(error_msg)
         if pool:
             await log_error(pool, 'system', 'fatal_error', error_msg)
         raise
@@ -1138,7 +1142,8 @@ async def main():
                 await pool.close()
                 print("\n✅ Database connection pool closed.")
             except Exception as e:
-                print(f"\n⚠️  Error closing database pool: {str(e)}")
+                print("\n⚠️  Error closing database pool:")
+                print(str(e))
 
 if __name__ == "__main__":
     asyncio.run(main())

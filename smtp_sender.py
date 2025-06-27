@@ -198,15 +198,11 @@ def send_email():
     except Exception as e:
         import traceback
         error_type = type(e).__name__
-        error_msg = f"Error Type: {error_type}\n"
-        error_msg += f"Error Message: {str(e)}\n"
-        error_msg += f"Traceback:\n{traceback.format_exc()}"
+        error_msg = f"Error Type: {error_type}"
+        error_msg += f"\nError Message: {str(e)}"
         logger.error(f"Detailed error: {error_msg}")
-        logger.error(error_msg)
-        return jsonify({"status": "error", "error": error_msg}), 500
-    except Exception as e:
-        error_msg = f"Unexpected error: {str(e)}"
-        logger.error(error_msg, exc_info=True)
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        logger.error(f"Error details: {error_msg}", exc_info=True)
         return jsonify({"status": "error", "error": error_msg}), 500
 
 @app.route("/", methods=["GET"])

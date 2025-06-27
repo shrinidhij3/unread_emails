@@ -30,25 +30,70 @@ import os
 load_dotenv()
 
 # Database configuration from environment variables
-DB_CONFIG = {
-    "user": os.getenv("DB_USER", "postgres"),
-    "password": os.getenv("DB_PASSWORD"),
-    "database": os.getenv("DB_NAME", "railway"),
-    "host": os.getenv("DB_HOST"),
-    "port": int(os.getenv("DB_PORT", "5432")),
-    "command_timeout": int(os.getenv("DB_COMMAND_TIMEOUT", "10")),  # seconds
-    "min_size": int(os.getenv("DB_POOL_MIN_SIZE", "1")),  # Minimum connections in pool
-    "max_size": int(os.getenv("DB_POOL_MAX_SIZE", "5")),  # Maximum connections in pool
-    "max_inactive_connection_lifetime": int(os.getenv("DB_MAX_INACTIVE_CONN_LIFETIME", "300")),  # 5 minutes
-    "max_queries": int(os.getenv("DB_MAX_QUERIES", "50000")),  # Max queries before connection is replaced
-    "timeout": float(os.getenv("DB_TIMEOUT", "10.0"))  # Connection timeout in seconds
-}
+# Using DATABASE_URL as the primary configuration source
+# Fallback to individual DB_* variables for backward compatibility
 
-# Validate required environment variables
-required_vars = ["DB_PASSWORD", "DB_HOST"]
-missing_vars = [var for var in required_vars if not os.getenv(var)]
-if missing_vars:
-    raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+def get_db_config():
+    """Get database configuration from environment variables."""
+    database_url = os.getenv("DATABASE_URL")
+    
+    if database_url:
+        # If DATABASE_URL is provided, parse it
+        if database_url.startswith('postgres://'):
+            database_url = database_url.replace('postgres://', 'postgresql://', 1)
+        
+        # Parse the URL to extract components
+        from urllib.parse import urlparse, parse_qs
+        result = urlparse(database_url)
+        
+        # Extract query parameters
+        query = parse_qs(result.query)
+        
+        # Build config from URL
+        config = {
+            "user": result.username or "postgres",
+            "password": result.password or "",
+            "database": result.path[1:] if result.path else "railway",  # Remove leading '/'
+            "host": result.hostname or "localhost",
+            "port": result.port or 5432,
+            "min_size": int(os.getenv("DB_POOL_MIN_SIZE", "1")),
+            "max_size": int(os.getenv("DB_POOL_MAX_SIZE", "5")),
+            "max_queries": int(os.getenv("DB_MAX_QUERIES", "50000")),
+            "max_inactive_connection_lifetime": int(os.getenv("DB_MAX_INACTIVE_CONN_LIFETIME", "300")),
+            "timeout": float(os.getenv("DB_TIMEOUT", "10.0")),
+            "command_timeout": int(os.getenv("DB_COMMAND_TIMEOUT", "10")),
+            "dsn": database_url
+        }
+        
+        # Add SSL mode if specified
+        if 'sslmode' in query:
+            config['ssl'] = query['sslmode'][0]
+            
+        return config
+    else:
+        # Fallback to individual variables for backward compatibility
+        required_vars = ["DB_PASSWORD", "DB_HOST"]
+        missing_vars = [var for var in required_vars if not os.getenv(var)]
+        if missing_vars:
+            raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+        
+        return {
+            "user": os.getenv("DB_USER", "postgres"),
+            "password": os.getenv("DB_PASSWORD"),
+            "database": os.getenv("DB_NAME", "railway"),
+            "host": os.getenv("DB_HOST"),
+            "port": int(os.getenv("DB_PORT", "5432")),
+            "command_timeout": int(os.getenv("DB_COMMAND_TIMEOUT", "10")),
+            "min_size": int(os.getenv("DB_POOL_MIN_SIZE", "1")),
+            "max_size": int(os.getenv("DB_POOL_MAX_SIZE", "5")),
+            "max_inactive_connection_lifetime": int(os.getenv("DB_MAX_INACTIVE_CONN_LIFETIME", "300")),
+            "max_queries": int(os.getenv("DB_MAX_QUERIES", "50000")),
+            "timeout": float(os.getenv("DB_TIMEOUT", "10.0")),
+            "ssl": os.getenv("DB_SSL", "require")
+        }
+
+# Initialize db_config
+db_config = get_db_config()
 
 # Monitoring configuration
 MONITORING = {
@@ -316,22 +361,24 @@ def extract_email_body(message) -> str:
 
 async def get_db_pool():
     """Create a connection pool for database operations with proper configuration."""
-    # Get database URL from environment
-    database_url = os.getenv("DATABASE_URL")
-    if not database_url:
-        raise ValueError("DATABASE_URL environment variable is not set")
+    # Get database configuration
+    config = db_config.copy()
     
-    # Handle different URL formats
-    if database_url.startswith('postgres://'):
-        database_url = database_url.replace('postgres://', 'postgresql://', 1)
+    # Use DSN if available (from DATABASE_URL), otherwise use individual parameters
+    dsn = config.pop('dsn', None)
     
-    # Create connection pool using the URL
+    # Remove None values and convert to asyncpg expected format
+    pool_config = {k: v for k, v in config.items() if v is not None}
+    
+    # Create connection pool
     pool = await asyncpg.create_pool(
-        dsn=database_url,
-        min_size=DB_CONFIG.get('min_size', 1),
-        max_size=DB_CONFIG.get('max_size', 10),
-        max_queries=DB_CONFIG.get('max_queries', 50000),
-        max_inactive_connection_lifetime=DB_CONFIG.get('max_inactive_connection_lifetime', 300.0)
+        dsn=dsn,
+        min_size=pool_config.get('min_size', 1),
+        max_size=pool_config.get('max_size', 10),
+        max_queries=pool_config.get('max_queries', 50000),
+        max_inactive_connection_lifetime=pool_config.get('max_inactive_connection_lifetime', 300.0),
+        command_timeout=pool_config.get('command_timeout'),
+        ssl=pool_config.get('ssl')
     )
     
     # Initialize database schema

@@ -28,13 +28,14 @@ services:
     healthCheckPath: /health
     autoDeploy: true
     
-  - type: worker
-    name: email-poller
+  - type: cron
+    name: email-poller-cron
     env: python
     region: singapore
     plan: free
+    schedule: "*/5 * * * *"  # Runs every 5 minutes
     buildCommand: pip install -r requirements.txt
-    startCommand: python imap_poller.py
+    runCommand: python imap_poller.py
     envVars:
       - key: PYTHON_VERSION
         value: 3.9.0

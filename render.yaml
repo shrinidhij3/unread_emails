@@ -3,29 +3,28 @@
 
 services:
   - type: web
-    name: email-api
+    name: email-sender
     env: python
     region: singapore
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn --worker-class=uvicorn.workers.UvicornWorker --workers=2 --bind 0.0.0.0:$PORT email_api:app
+    startCommand: gunicorn --worker-class=uvicorn.workers.UvicornWorker --workers=2 --bind 0.0.0.0:$PORT email_sender:app
     envVars:
       - key: PYTHON_VERSION
-        value: 3.9.0
+        value: 3.11.0
       - key: PYTHONUNBUFFERED
         value: 1
       - key: ENVIRONMENT
         value: production
       - key: PORT
         value: 10000
+      - key: LOG_LEVEL
+        value: INFO
       - key: GUNICORN_CMD_ARGS
         value: "--workers=2 --worker-class=uvicorn.workers.UvicornWorker --timeout 120"
-      - key: DATABASE_URL
-        fromService:
-          name: email-db
-          type: postgres
-          property: connectionString
-    healthCheckPath: /healthz
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+    healthCheckPath: /health
     autoDeploy: true
 
   - type: worker

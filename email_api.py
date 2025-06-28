@@ -4,6 +4,7 @@ import os
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 import json
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends, status, BackgroundTasks, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field, validator, HttpUrl

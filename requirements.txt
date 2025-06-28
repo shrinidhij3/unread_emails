@@ -14,7 +14,6 @@ email-validator>=2.0.0
 
 # IMAP
 imaplib2>=3.6
-python-email-validator>=2.0.0
 
 # Security
 python-jose[cryptography]>=3.3.0
@@ -56,6 +55,3 @@ dnspython>=2.3.0
 
 # For async operations
 asyncio>=3.4.3
-
-# For configuration
-python-decouple>=3.8

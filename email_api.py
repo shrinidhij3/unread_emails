@@ -55,6 +55,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Health check endpoint
+@app.get("/healthz")
+async def health_check():
+    """Health check endpoint for Render and Kubernetes."""
+    return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
+
 # Database connection pool
 _db_pool = None
 

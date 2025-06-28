@@ -25,7 +25,7 @@ services:
           name: email-db
           type: postgres
           property: connectionString
-    healthCheckPath: /health
+    healthCheckPath: /healthz
     autoDeploy: true
 
   - type: worker

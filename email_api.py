@@ -254,13 +254,13 @@ async def startup():
                 _db_pool = await asyncpg.create_pool(dsn=os.getenv('DATABASE_URL'))
                 
             async with _db_pool.acquire() as conn:
-                # Check if email_accounts table exists
+                # Check if credentials_email table exists
                 table_exists = await conn.fetchval(
                     """
                     SELECT EXISTS (
                         SELECT FROM information_schema.tables 
                         WHERE table_schema = 'public' 
-                        AND table_name = 'email_accounts'
+                        AND table_name = 'credentials_email'
                     );
                     """
                 )
@@ -272,7 +272,7 @@ async def startup():
                     logging.info("Migrations completed")
                 
                 # Check if there are any email accounts
-                account_count = await conn.fetchval("SELECT COUNT(*) FROM email_accounts")
+                account_count = await conn.fetchval("SELECT COUNT(*) FROM credentials_email")
                 logging.info(f"Found {account_count} email accounts in the database")
                 
         except Exception as e:

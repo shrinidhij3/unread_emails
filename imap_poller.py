@@ -10,6 +10,7 @@ import time
 import os
 import base64
 import uuid
+import logging
 from email.header import decode_header
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple, Union, Any
@@ -19,7 +20,6 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import hashlib
 import json
-import os
 import signal
 import sys
 import threading

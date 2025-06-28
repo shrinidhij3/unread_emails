@@ -1044,13 +1044,25 @@ async def process_inbox(cred, pool):
         cred: Dictionary containing email credentials and connection details
         pool: Database connection pool
     """
-    email_address = cred['email']
-    password = cred['password']
-    imap_config = cred['imap']
-    host = imap_config['host']
-    port = imap_config['port']
-    use_ssl = imap_config['use_ssl']
+    email_address = cred.get('email')
+    if not email_address:
+        logging.error("No email address provided in credentials")
+        return 1
+        
+    error_count = 0
     
+    # Check IMAP configuration
+    if not cred.get('imap_host') or not cred.get('imap_port'):
+        logging.error(f"Missing IMAP configuration for {email_address}")
+        await log_error(pool, email_address, 'configuration_error', 
+                       'Missing IMAP host or port in configuration')
+        return 1
+    
+    # Check if we should skip due to rate limiting
+    if await is_rate_limited(pool, email_address):
+        logging.warning(f"Rate limiting active for {email_address}. Skipping this cycle.")
+        return 0
+
     mail = None
     start_time = time.time()
     processed_count = 0
@@ -1151,9 +1163,15 @@ async def process_inbox(cred, pool):
                     print(f"   Selected INBOX, {messages[0].decode()} messages")
                     
                     # Process the INBOX
-                    error_count = await process_email_folder(mail, 'INBOX', email_address, pool)
-                    if error_count > 0:
-                        print(f"   Encountered {error_count} errors while processing emails")
+                    error_count = 0
+                    try:
+                        error_count = await process_email_folder(mail, 'INBOX', email_address, pool)
+                        if error_count and error_count > 0:
+                            print(f"   ⚠️  Encountered {error_count} errors while processing emails")
+                    except Exception as e:
+                        error_count = (error_count or 0) + 1
+                        print(f"   ❌ Error processing emails: {str(e)}")
+                        await log_error(pool, email_address, 'process_folder_error', str(e), folder='INBOX')
                     
                     return True
                     

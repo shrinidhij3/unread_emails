@@ -202,31 +202,58 @@ async def get_sync_service() -> EmailSyncService:
     if _sync_service is None:
         if _account_manager is None:
             _account_manager = await get_account_manager()
-        _sync_service = EmailSyncService(_db_pool, _account_manager=_account_manager)
+        _sync_service = EmailSyncService(_db_pool, account_manager=_account_manager)
     return _sync_service
 
 # Startup and shutdown events
 @app.on_event("startup")
 async def startup():
     """Initialize database connection, services, and start the poller."""
-    global poller_thread, poller_running
+    global poller_thread, poller_running, _db_pool
     
     try:
         # Load environment variables
         load_dotenv()
 
-        # Initialize database connection
-        await connection_manager.connect()
-        logging.info("Database connection established")
+                # Initialize connection manager without config - will be configured when needed
+        global connection_manager
+        
+        # Default IMAP configuration from environment variables
+        DEFAULT_IMAP_CONFIG = {
+            'imap_host': os.getenv('IMAP_HOST', ''),
+            'imap_port': int(os.getenv('IMAP_PORT', 993)),
+            'imap_use_ssl': os.getenv('IMAP_USE_SSL', 'true').lower() == 'true'
+        }
+        
+        # Update connection manager config if we have IMAP settings
+        if DEFAULT_IMAP_CONFIG['imap_host']:
+            connection_manager.config.update(DEFAULT_IMAP_CONFIG)
+            logging.info(f"Configured IMAP connection manager with host: {DEFAULT_IMAP_CONFIG['imap_host']}")
+            
+            # Test the connection
+            try:
+                conn = await connection_manager.connect()
+                if conn:
+                    logging.info("Successfully connected to IMAP server")
+                    conn.logout()
+                else:
+                    logging.warning("Could not establish IMAP connection with current configuration")
+            except Exception as e:
+                logging.error(f"Error testing IMAP connection: {str(e)}")
+        else:
+            logging.warning("No default IMAP configuration found. Email synchronization will not work until an account is added with valid IMAP settings.")
 
         # Initialize services
-        crypto_service = get_crypto_service()
-        account_manager = get_account_manager()
-        sync_service = get_sync_service()
+        crypto_service = await get_crypto_service()
+        account_manager = await get_account_manager()
+        sync_service = await get_sync_service()
 
         # Verify database schema
         try:
-            async with connection_manager.pool.acquire() as conn:
+            if not _db_pool:
+                _db_pool = await asyncpg.create_pool(dsn=os.getenv('DATABASE_URL'))
+                
+            async with _db_pool.acquire() as conn:
                 # Check if email_accounts table exists
                 table_exists = await conn.fetchval(
                     """

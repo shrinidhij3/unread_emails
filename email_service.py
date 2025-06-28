@@ -230,25 +230,48 @@ provider_registry = ProviderRegistry()
 class IMAPConnectionManager:
     """Manages IMAP connections with retry and error handling"""
     
-    def __init__(self, config: Dict[str, Any]):
-        self.config = config
+    def __init__(self, config: Dict[str, Any] = None):
+        self.config = config or {}
         self.logger = logging.getLogger(f'{__name__}.IMAPConnectionManager')
+        self.connection = None
     
+    def _validate_config(self):
+        """Validate that required configuration is present."""
+        required = ['imap_host', 'imap_port']
+        missing = [key for key in required if not self.config.get(key)]
+        if missing:
+            self.logger.warning(f"Missing required IMAP configuration: {', '.join(missing)}")
+            return False
+        return True
+
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
         retry=retry_if_exception_type(IMAPConnectionError),
         reraise=True
     )
-    async def connect(self) -> imaplib.IMAP4_SSL:
-        """Establish an IMAP connection with retry logic"""
+    async def connect(self) -> Optional[imaplib.IMAP4_SSL]:
+        """Connect to IMAP server if valid configuration is available."""
+        if not self.config:
+            self.logger.debug("No IMAP configuration provided")
+            return None
+            
+        if not self._validate_config():
+            self.logger.warning("Skipping IMAP connection due to invalid configuration")
+            return None
+            
         try:
             context = self._create_ssl_context()
+            use_ssl = self.config.get('imap_use_ssl', True)
+            host = self.config.get('imap_host')
+            port = self.config.get('imap_port')
             
-            if self.config.get('imap_use_ssl', True):
+            self.logger.debug(f"Attempting to connect to IMAP server: {host}:{port} (SSL: {use_ssl})")
+            
+            if use_ssl:
                 conn = imaplib.IMAP4_SSL(
-                    host=self.config['imap_host'],
-                    port=self.config['imap_port'],
+                    host=host,
+                    port=port,
                     ssl_context=context
                 )
             else:

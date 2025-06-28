@@ -279,6 +279,7 @@ async def send_email(email_data: EmailRequest, request: Request):
         # Add HTML part if provided
         if email_data.html:
             formatted_address = format_mailing_address(email_data.mailing_address)
+            reply_to = email_data.reply_to or email_data.sender
             
             html_content = f"""
             <!DOCTYPE html>
@@ -293,7 +294,7 @@ async def send_email(email_data: EmailRequest, request: Request):
                     <p style="margin-top: 30px; font-size: 12px; color: #777; border-top: 1px solid #eee; padding-top: 10px;">
                         <a href="mailto:{reply_to}?subject=Unsubscribe" style="color: #0066cc; text-decoration: none;">Unsubscribe</a>
                         <span style="color: #ddd; margin: 0 10px;">|</span>
-                        {formatted_address.replace('\n', '<br>')}
+                        {formatted_address.replace(chr(10), '<br>')}
                     </p>
                 </div>
             </body>

@@ -1480,4 +1480,34 @@ async def main():
                 print(str(e))
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    import time
+    
+    print("🚀 Starting IMAP Poller Service")
+    print(f"Python version: {sys.version}")
+    print(f"Current time: {datetime.now(timezone.utc).isoformat()}")
+    
+    # Print environment variables (excluding sensitive ones)
+    print("\nEnvironment variables:")
+    for var in ['ENVIRONMENT', 'DB_HOST', 'DB_NAME', 'DB_USER', 'DJANGO_SECRET_KEY']:
+        value = os.environ.get(var)
+        if value and ('PASSWORD' in var or 'SECRET' in var or 'KEY' in var):
+            value = f"{value[:2]}...{value[-2:] if len(value) > 4 else ''} (length: {len(value)})"
+        print(f"  {var}: {value or 'Not set'}")
+    
+    # Main loop with restart capability
+    while True:
+        try:
+            print("\n" + "="*50)
+            print(f"🚀 Starting IMAP poller at {datetime.now(timezone.utc).isoformat()}")
+            asyncio.run(main())
+        except KeyboardInterrupt:
+            print("\n🛑 Received keyboard interrupt. Shutting down gracefully...")
+            break
+        except Exception as e:
+            print(f"\n⚠️  Error in main loop: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            print(f"\n🔄 Restarting in 30 seconds...")
+            time.sleep(30)
+    
+    print("\n👋 IMAP Poller Service stopped")

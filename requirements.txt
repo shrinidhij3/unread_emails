@@ -12,6 +12,10 @@ asyncpg>=0.27.0
 aiosmtplib>=2.0.0
 email-validator>=2.0.0
 
+# IMAP
+imaplib2>=3.6
+python-email-validator>=2.0.0
+
 # Security
 python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4
@@ -30,4 +34,28 @@ aiosmtpd>=1.4.4.post2
 anyio>=3.6.2
 
 # Environment
+python-decouple>=3.8
+
+# Logging
+colorama>=0.4.6
+
+# Data Processing
+pandas>=1.5.0
+
+# Date Handling
+pytz>=2023.3
+
+# HTTP Client
+aiohttp>=3.8.4
+
+# For SSL connections
+pyOpenSSL>=23.0.0
+
+# For email parsing
+dnspython>=2.3.0
+
+# For async operations
+asyncio>=3.4.3
+
+# For configuration
 python-decouple>=3.8

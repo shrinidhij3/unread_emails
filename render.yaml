@@ -3,10 +3,10 @@
 
 services:
   - type: web
-    name: email-auto-responder
+    name: email-api
     env: python
-    region: singapore # or choose another region closer to your users
-    plan: free # or 'starter', 'standard', etc. for production
+    region: singapore
+    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn --worker-class=uvicorn.workers.UvicornWorker --workers=2 --bind 0.0.0.0:$PORT email_api:app
     envVars:
@@ -17,7 +17,7 @@ services:
       - key: ENVIRONMENT
         value: production
       - key: PORT
-        value: 8000
+        value: 10000
       - key: GUNICORN_CMD_ARGS
         value: "--workers=2 --worker-class=uvicorn.workers.UvicornWorker --timeout 120"
       - key: DATABASE_URL
@@ -28,14 +28,13 @@ services:
     healthCheckPath: /health
     autoDeploy: true
 
-  - type: cron
-    name: email-poller-cron # Updated:
+  - type: worker
+    name: imap-poller
     env: python
     region: singapore
     plan: free
-    schedule: "*/5 * * * *" # Runs every 5 minutes
     buildCommand: pip install -r requirements.txt
-    runCommand: python imap_poller.py
+    startCommand: python imap_poller.py
     envVars:
       - key: PYTHON_VERSION
         value: 3.9.0
@@ -43,11 +42,13 @@ services:
         value: 1
       - key: ENVIRONMENT
         value: production
-      # Database configuration for worker
-      - key: DB_USER
-        value: postgres
-      - key: DB_PASSWORD
-        fromDatabase:
+      - key: DATABASE_URL
+        fromService:
+          name: email-db
+          type: postgres
+          property: connectionString
+      - key: DJANGO_SECRET_KEY
+        sync: true
           name: your-database-name
           property: connectionString
           envVar: DATABASE_URL

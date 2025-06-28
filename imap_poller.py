@@ -5,7 +5,6 @@ import imaplib
 import httpx
 import socket
 import ssl
-import re
 import time
 import os
 import base64
@@ -21,16 +20,65 @@ import hashlib
 import json
 import os
 from dotenv import load_dotenv
+import logging
+import re
+import imaplib2
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import aiosmtplib
+import pandas as pd
+import pytz
+import traceback
+import sys
+from pathlib import Path
 
-# Load environment variables from .env file
+# Load environment variables
 load_dotenv()
 
-# Constants
-MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024  # 10MB
-ATTACHMENTS_DIR = 'attachments'
+# Configure logging
+log_format = '%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
+log_level = os.getenv('LOG_LEVEL', 'DEBUG').upper()
 
-# Create attachments directory if it doesn't exist
-os.makedirs(ATTACHMENTS_DIR, exist_ok=True)
+# Create logs directory if it doesn't exist
+os.makedirs('logs', exist_ok=True)
+
+logging.basicConfig(
+    level=log_level,
+    format=log_format,
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('logs/imap_poller.log', encoding='utf-8')
+    ]
+)
+
+# Set log levels for noisy libraries
+logging.getLogger('asyncio').setLevel(logging.WARNING)
+logging.getLogger('aiosmtplib').setLevel(logging.WARNING)
+logging.getLogger('aiosmtpd').setLevel(logging.WARNING)
+logging.getLogger('urllib3').setLevel(logging.WARNING)
+logging.getLogger('httpcore').setLevel(logging.WARNING)
+logging.getLogger('httpx').setLevel(logging.WARNING)
+
+logger = logging.getLogger(__name__)
+logger.setLevel(log_level)
+
+# Add debug information about environment
+def get_safe_env():
+    safe_env = {}
+    for k, v in os.environ.items():
+        if any(sensitive in k.upper() for sensitive in ['PASS', 'KEY', 'SECRET', 'TOKEN']):
+            safe_env[k] = '***REDACTED***'
+        else:
+            safe_env[k] = v
+    return safe_env
+
+logger.debug("=" * 80)
+logger.debug("Starting IMAP Poller with the following configuration:")
+logger.debug(f"Python version: {sys.version}")
+logger.debug(f"Current working directory: {os.getcwd()}")
+logger.debug(f"Environment variables: {json.dumps(get_safe_env(), indent=2)}")
+logger.debug("=" * 80)
 
 # Load environment variables
 from dotenv import load_dotenv
@@ -563,17 +611,16 @@ def decrypt_fernet(encrypted_data: str) -> str:
         raise ValueError(f"Failed to decrypt password: {e}")
 
 async def fetch_credentials(pool):
-    """Fetch email credentials from the credentials_email table with provider-specific settings.
+    """Fetch email credentials from the credentials_email table with enhanced logging and error handling.
     
-    Expects password to be encrypted with Fernet in the format:
-    - ENC:encrypted_data
-    
+    Handles both plaintext and encrypted passwords (with 'ENC:' prefix or Fernet token format).
     The DJANGO_SECRET_KEY environment variable must be set for decryption.
     """
+    logger.info("Starting to fetch email credentials from database...")
+    
     try:
-        print("🔍 Fetching email credentials from database...")
-        
         # First, check if the table exists
+        logger.debug("Checking if credentials_email table exists...")
         table_check = await pool.fetchval(
             """
             SELECT EXISTS (
@@ -585,12 +632,14 @@ async def fetch_credentials(pool):
         )
         
         if not table_check:
-            print("❌ Error: credentials_email table does not exist")
+            error_msg = "credentials_email table does not exist in the database"
+            logger.error(error_msg)
             return []
             
-        print("✅ Found credentials_email table")
+        logger.info("Found credentials_email table")
         
         # Get all column names from the table
+        logger.debug("Fetching table column information...")
         columns_result = await pool.fetch(
             """
             SELECT column_name, data_type 
@@ -601,7 +650,7 @@ async def fetch_credentials(pool):
         
         # Log column information for debugging
         column_info = {row['column_name']: row['data_type'] for row in columns_result}
-        print(f"ℹ️ Table columns and types: {column_info}")
+        logger.debug(f"Table columns and types: {column_info}")
         
         # Build the query based on available columns
         select_fields = []
@@ -633,7 +682,8 @@ async def fetch_credentials(pool):
             select_fields.append('is_active')
             
         if not select_fields:
-            print("❌ Error: No valid columns found in credentials_email table")
+            error_msg = "No valid columns found in credentials_email table"
+            logger.error(error_msg)
             return []
             
         # Build the WHERE clause
@@ -647,27 +697,27 @@ async def fetch_credentials(pool):
             {where_clause}
         """
         
-        print(f"🔍 Executing query: {query}")
+        logger.debug(f"Executing query: {query}")
         
         # Execute the query
         records = await pool.fetch(query)
         
         if not records:
-            print("ℹ️ No email accounts found in the database")
+            logger.warning("No email accounts found in the database")
             return []
             
-        print(f"✅ Found {len(records)} email accounts in the database")
+        logger.info(f"Found {len(records)} email accounts in the database")
         
         credentials = []
         for record in records:
             try:
                 cred = dict(record)
                 email = cred.get('email', 'unknown')
-                print(f"\n🔍 Processing account: {email}")
+                logger.info(f"Processing account: {email}")
                 
                 # Skip if no email or password
                 if not email or not (cred.get('password') or cred.get('password_encrypted')):
-                    print(f"⚠️ Skipping account - missing email or password: {email}")
+                    logger.warning(f"Skipping account - missing email or password: {email}")
                     continue
                 
                 # Handle password decryption if needed
@@ -678,41 +728,43 @@ async def fetch_credentials(pool):
                         if isinstance(password, str):
                             # Check for ENC: prefix or Fernet token format (starts with gAAAAA)
                             if password.startswith('ENC:'):
-                                print("   🔑 Detected ENC: prefixed password")
+                                logger.debug("Detected ENC: prefixed password")
                                 password = password[4:]  # Remove 'ENC:' prefix
                                 password = decrypt_fernet(password)
-                                print(f"   ✅ Successfully decrypted password")
+                                logger.debug("Successfully decrypted password")
                             elif password.startswith('gAAAAA'):
-                                print("   🔑 Detected Fernet-encrypted password")
+                                logger.debug("Detected Fernet-encrypted password")
                                 password = decrypt_fernet(password)
-                                print(f"   ✅ Successfully decrypted Fernet password")
+                                logger.debug("Successfully decrypted Fernet password")
                             else:
-                                print("   ℹ️ Using plaintext password")
+                                logger.debug("Using plaintext password")
                         # Handle bytes passwords
                         elif isinstance(password, bytes):
                             try:
                                 password_str = password.decode('utf-8')
                                 if password_str.startswith(('ENC:', 'gAAAAA')):
-                                    password = decrypt_fernet(password_str[4:] if password_str.startswith('ENC:') else password_str)
-                                    print(f"   ✅ Successfully decrypted password from bytes")
+                                    password = decrypt_fernet(
+                                        password_str[4:] if password_str.startswith('ENC:') else password_str
+                                    )
+                                    logger.debug("Successfully decrypted password from bytes")
                                 else:
                                     password = password_str
-                                    print("   ℹ️ Using plaintext password from bytes")
+                                    logger.debug("Using plaintext password from bytes")
                             except Exception as e:
-                                print(f"   ⚠️ Could not process password bytes: {str(e)}")
+                                logger.error(f"Could not process password bytes: {str(e)}")
                                 continue
                     except Exception as e:
-                        print(f"   ❌ Failed to process password: {str(e)}")
+                        logger.error(f"Failed to process password: {str(e)}")
                         continue
                 
                 # Set default provider settings if not specified
                 provider_type = (cred.get('provider_type') or 'custom').lower()
-                print(f"Provider type: {provider_type}")
+                logger.debug(f"Provider type: {provider_type}")
                 
                 # Set default IMAP/SMTP settings based on provider type if not provided
                 if not cred.get('imap_host'):
                     if 'gmail' in provider_type:
-                        print("🔧 Using Gmail default settings")
+                        logger.debug("Using Gmail default settings")
                         cred.update({
                             'imap_host': 'imap.gmail.com',
                             'imap_port': 993,
@@ -723,7 +775,7 @@ async def fetch_credentials(pool):
                             'smtp_use_tls': False
                         })
                     elif 'outlook' in provider_type or 'hotmail' in provider_type or 'office365' in provider_type:
-                        print("🔧 Using Outlook/Office 365 default settings")
+                        logger.debug("Using Outlook/Office 365 default settings")
                         cred.update({
                             'imap_host': 'outlook.office365.com',
                             'imap_port': 993,
@@ -761,23 +813,21 @@ async def fetch_credentials(pool):
                 
                 # Add to the list of credentials
                 credentials.append(formatted_cred)
-                print(f"✅ Successfully processed account: {email}")
-                print(f"   IMAP: {formatted_cred['imap']}")
-                print(f"   SMTP: {formatted_cred['smtp']}")
+                logger.info(f"Successfully processed account: {email}")
+                logger.debug(f"IMAP: {formatted_cred['imap']}")
+                logger.debug(f"SMTP: {formatted_cred['smtp']}")
                 
             except Exception as e:
-                print(f"❌ Error processing account: {str(e)}")
-                import traceback
-                traceback.print_exc()
+                logger.error(f"Error processing account: {str(e)}")
+                logger.error(traceback.format_exc())
                 continue
                 
-        print(f"\n✅ Successfully loaded {len(credentials)} email accounts")
+        logger.info(f"Successfully loaded {len(credentials)} email accounts")
         return credentials
         
     except Exception as e:
-        print(f"❌ Error in fetch_credentials: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        logger.critical(f"Critical error in fetch_credentials: {str(e)}")
+        logger.error(traceback.format_exc())
         return []
 
 async def process_email_folder(mail, folder: str, email_address: str, pool, max_age_days: int = 30) -> int:

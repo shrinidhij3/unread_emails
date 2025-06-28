@@ -109,26 +109,23 @@ print(f"DATABASE_URL is set: {'Yes' if os.getenv('DATABASE_URL') else 'No'}")
 
 
 # Database configuration from environment variables
-DB_CONFIG = {
-    "user": os.getenv("DB_USER", "postgres"),
-    "password": os.getenv("DB_PASSWORD"),
-    "database": os.getenv("DB_NAME", "railway"),
-    "host": os.getenv("DB_HOST"),
-    "port": int(os.getenv("DB_PORT", "5432")),
-    "command_timeout": int(os.getenv("DB_COMMAND_TIMEOUT", "10")),  # seconds
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL environment variable is required")
+
+# Handle different URL formats (postgres:// vs postgresql://)
+if DATABASE_URL.startswith('postgres://'):
+    DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+
+# Pool configuration
+DB_POOL_CONFIG = {
     "min_size": int(os.getenv("DB_POOL_MIN_SIZE", "1")),  # Minimum connections in pool
     "max_size": int(os.getenv("DB_POOL_MAX_SIZE", "5")),  # Maximum connections in pool
     "max_inactive_connection_lifetime": int(os.getenv("DB_MAX_INACTIVE_CONN_LIFETIME", "300")),  # 5 minutes
     "max_queries": int(os.getenv("DB_MAX_QUERIES", "50000")),  # Max queries before connection is replaced
-    "timeout": float(os.getenv("DB_TIMEOUT", "10.0")),  # Connection timeout in seconds
+    "command_timeout": int(os.getenv("DB_COMMAND_TIMEOUT", "10")),  # seconds
     "ssl": os.getenv("DB_SSL", "require")  # SSL mode
 }
-
-# Validate required environment variables
-required_vars = ["DB_PASSWORD", "DB_HOST"]
-missing_vars = [var for var in required_vars if not os.getenv(var)]
-if missing_vars:
-    raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
 # Monitoring configuration
 MONITORING = {
@@ -395,39 +392,36 @@ def extract_email_body(message) -> str:
     return body or "[No message body]"
 
 async def get_db_pool():
-    """Create a connection pool for database operations with proper configuration."""
-    # Remove None values from config
-    pool_config = {k: v for k, v in DB_CONFIG.items() if v is not None}
+    """Create a connection pool for database operations using DATABASE_URL."""
+    global DATABASE_URL, DB_POOL_CONFIG
     
-    # Create connection pool with explicit parameters for better error reporting
+    logger.info("Creating database connection pool...")
+    logger.debug(f"Using DATABASE_URL: {DATABASE_URL.split('@')[-1] if '@' in DATABASE_URL else '***'}")
+    
     try:
+        # Create connection pool using the DATABASE_URL
         pool = await asyncpg.create_pool(
-            host=pool_config.get('host'),
-            port=pool_config.get('port'),
-            user=pool_config.get('user'),
-            password=pool_config.get('password'),
-            database=pool_config.get('database'),
-            min_size=pool_config.get('min_size', 1),
-            max_size=pool_config.get('max_size', 5),
-            max_inactive_connection_lifetime=pool_config.get('max_inactive_connection_lifetime', 300.0),
-            max_queries=pool_config.get('max_queries', 50000),
-            command_timeout=pool_config.get('command_timeout'),
-            ssl=pool_config.get('ssl')
+            dsn=DATABASE_URL,
+            **{k: v for k, v in DB_POOL_CONFIG.items() if v is not None}
         )
         
-        # Initialize database schema
+        # Test the connection
         async with pool.acquire() as conn:
+            # Initialize database schema
             await conn.execute(DB_SCHEMA)
             
+            # Log database info
+            db_name = await conn.fetchval('SELECT current_database()')
+            db_user = await conn.fetchval('SELECT current_user')
+            logger.info(f"Connected to database: {db_name} as user: {db_user}")
+            
+        logger.info("Database connection pool initialized successfully")
         return pool
         
     except Exception as e:
-        print(f"❌ Error creating database connection pool: {str(e)}")
-        # Print the connection details (without password) for debugging
-        debug_config = pool_config.copy()
-        if 'password' in debug_config:
-            debug_config['password'] = '***'
-        print(f"Connection config: {debug_config}")
+        logger.error(f"❌ Error creating database connection pool: {str(e)}")
+        logger.error(f"Using DATABASE_URL: {DATABASE_URL.split('@')[-1] if '@' in DATABASE_URL else '***'}")
+        logger.error(traceback.format_exc())
         raise
 
 async def get_last_processed_date(pool, email_address: str) -> Optional[datetime]:
@@ -1433,6 +1427,44 @@ async def process_inbox(cred, pool):
                 error_msg = f"Error during logout: {str(e)}"
                 print(f"   ⚠️  {error_msg}")
                 await log_error(pool, email_address, 'logout_error', error_msg)
+
+async def poll_emails(pool):
+    """Poll emails for all configured accounts using the provided database pool.
+    
+    Args:
+        pool: Database connection pool to use for database operations
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("Starting email polling with provided database pool")
+    
+    try:
+        # Process emails
+        credentials = await fetch_credentials(pool)
+        
+        if not credentials:
+            logger.warning("No email accounts found for polling")
+            return
+            
+        logger.info(f"Found {len(credentials)} email accounts to process")
+        
+        # Process each account
+        tasks = []
+        for cred in credentials:
+            try:
+                task = asyncio.create_task(process_inbox(cred, pool))
+                tasks.append(task)
+            except Exception as e:
+                logger.error(f"Error creating task for {cred.get('email', 'unknown')}: {str(e)}")
+                logger.debug(f"Task creation error details: {traceback.format_exc()}")
+        
+        # Wait for all tasks to complete
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+            
+    except Exception as e:
+        logger.error(f"Error in poll_emails: {str(e)}")
+        logger.debug(f"Error details: {traceback.format_exc()}")
+        raise
 
 async def main():
     """Main entry point with database connection management and enhanced logging."""

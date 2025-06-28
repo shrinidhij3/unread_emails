@@ -177,6 +177,9 @@ async def startup():
     """Initialize database connection and services."""
     global _db_pool, _crypto_service, _account_manager, _sync_service
     
+    # Get the FastAPI app instance
+    from fastapi import Request
+    
     try:
         # Get database configuration from environment variables
         database_url = os.getenv("DATABASE_URL")
@@ -208,6 +211,12 @@ async def startup():
         # Initialize database connection pool
         _db_pool = await asyncpg.create_pool(**db_config)
         
+        # Store the pool in the app state for use in endpoints
+        from fastapi import FastAPI
+        # Store the pool in the global app state
+        app.state.db_pool = _db_pool
+        logger.info("Database pool stored in app.state")
+        
         # Test the connection
         async with _db_pool.acquire() as conn:
             version = await conn.fetchval('SELECT version()')
@@ -223,6 +232,7 @@ async def startup():
     except Exception as e:
         logger.error(f"Failed to initialize database connection pool: {e}")
         logger.error("Please check your database configuration and ensure the database is accessible")
+        logger.error(traceback.format_exc())  # Add traceback for more details
         raise
 
 @app.on_event("shutdown")
@@ -442,21 +452,65 @@ async def trigger_polling():
     """
     Trigger manual email polling
     This endpoint can be called by an external cron job service
+    
+    Returns:
+        dict: Status of the polling operation
     """
     try:
-        # Import the main function from imap_poller
-        from imap_poller import main as run_imap_poller
+        logger.info("Received request to trigger email polling")
         
-        # Run the poller in a separate thread to avoid blocking
-        import threading
-        thread = threading.Thread(target=asyncio.run, args=(run_imap_poller(),))
-        thread.daemon = True
-        thread.start()
+        # Get database pool from the global app state
+        if not hasattr(app.state, 'db_pool') or not app.state.db_pool:
+            logger.error("Database connection pool not available in app state")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database connection not available. Please check if the service is properly initialized."
+            )
         
-        return {"status": "success", "message": "Email polling started in background"}
+        logger.info("Database connection pool is available")
+        
+        # Import the poller function
+        try:
+            from imap_poller import poll_emails
+            logger.info("Successfully imported poll_emails function")
+        except ImportError as e:
+            logger.error(f"Failed to import poll_emails: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to import poller module: {str(e)}"
+            )
+        
+        # Run the poller in the background
+        try:
+            logger.info("Starting email polling in background...")
+            asyncio.create_task(poll_emails(app.state.db_pool))
+            
+            logger.info("Email polling started successfully")
+            return {
+                "status": "success", 
+                "message": "Email polling started in background"
+            }
+            
+        except Exception as e:
+            logger.error(f"Error starting email polling: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to start email polling: {str(e)}"
+            )
+            
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+        
     except Exception as e:
-        logger.error(f"Error triggering email polling: {str(e)}")
-        return {"status": "error", "message": str(e)}
+        logger.error(f"Unexpected error in trigger_polling: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An unexpected error occurred: {str(e)}"
+        )
 
 def format_mailing_address(address: Optional[MailingAddress] = None) -> str:
     """Format a mailing address from a MailingAddress model as HTML."""

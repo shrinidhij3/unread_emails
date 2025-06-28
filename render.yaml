@@ -33,8 +33,9 @@ services:
     env: python
     region: singapore
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: python imap_poller.py
+    buildCommand: |
+      pip install -r requirements.txt
+    startCommand: python -u imap_poller.py
     envVars:
       - key: PYTHON_VERSION
         value: 3.9.0
@@ -49,15 +50,14 @@ services:
           property: connectionString
       - key: DJANGO_SECRET_KEY
         sync: true
-          name: your-database-name
-          property: connectionString
-          envVar: DATABASE_URL
-      - key: DB_NAME
-        value: railway
-      - key: DB_HOST
-        value: shuttle.proxy.rlwy.net
-      - key: DB_PORT
-        value: "52485"
-      - key: DB_SSL
-        value: "require"
-    autoDeploy: yes
+      # Application settings
+      - key: PYTHONPATH
+        value: "/opt/render/project/src"
+      - key: TZ
+        value: "UTC"
+      # Logging
+      - key: LOG_LEVEL
+        value: "DEBUG"
+      - key: LOG_DIR
+        value: "/tmp/logs"
+    autoDeploy: true

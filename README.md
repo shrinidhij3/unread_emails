@@ -2,7 +2,15 @@
 
 A robust and flexible email synchronization service that supports multiple email providers including Gmail, Office 365, cPanel, Zoho, and custom IMAP/SMTP servers.
 
-## Features
+## Key Features
+
+- 🚀 FastAPI-based email sending service
+- 🔒 Secure SMTP authentication with encrypted credentials
+- 📧 Support for multiple email providers (Gmail, Office 365, etc.)
+- 🔄 Background email processing
+- 🏥 Health check endpoint at `/health`
+- 📊 Built-in logging and monitoring
+- 🐳 Docker and Render.com ready
 
 - 🔒 Secure password storage with encryption
 - 🔄 Automatic provider detection
@@ -34,6 +42,9 @@ A robust and flexible email synchronization service that supports multiple email
 3. Install dependencies:
    ```bash
    pip install -r requirements.txt
+   
+   # For development with hot-reload
+   pip install uvicorn
    ```
 
 4. Set up environment variables:
@@ -60,14 +71,15 @@ A robust and flexible email synchronization service that supports multiple email
 5. Initialize the database:
    ```bash
    # Create database tables
-   python -c "from email_service.db import init_db; import asyncio; asyncio.run(init_db())"
+   # Initialize the database (if applicable)
+   # python -c "from email_service.db import init_db; import asyncio; asyncio.run(init_db())"
    ```
 
 ## Running the Service
 
 1. Start the API server:
    ```bash
-   uvicorn email_api:app --reload --host 0.0.0.0 --port 8000
+   uvicorn email_sender:app --reload --host 0.0.0.0 --port 8000
    ```
 
 2. The API documentation will be available at:

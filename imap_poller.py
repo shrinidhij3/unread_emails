@@ -22,6 +22,7 @@ import json
 import os
 import signal
 import sys
+import threading
 from functools import wraps
 
 # Using environment variables directly from the system

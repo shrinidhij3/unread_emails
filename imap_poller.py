@@ -625,45 +625,32 @@ async def fetch_credentials(pool):
         fernet_key = get_fernet_key()
             
         # Query to get all email accounts with their provider settings
+        # Using the actual column names from the database schema
         query = """
             SELECT 
-                id,
-                name,
+                account_id as id,
                 email,
-                password,
-                COALESCE(imap_host,
-                    CASE 
-                        WHEN email LIKE '%gmail.com' THEN 'imap.gmail.com'
-                        WHEN email LIKE '%outlook.com' OR email LIKE '%hotmail.com' OR email LIKE '%live.com' THEN 'outlook.office365.com'
-                        WHEN email LIKE '%yahoo.com' THEN 'imap.mail.yahoo.com'
-                        WHEN email LIKE '%aol.com' THEN 'imap.aol.com'
-                        ELSE 'mail.' || SPLIT_PART(email, '@', 2)
-                    END
-                ) as imap_host,
-                COALESCE(imap_port, 993) as imap_port,
-                use_ssl as imap_use_ssl,
-                secure as imap_secure,
-                provider,
-                COALESCE(smtp_host,
-                    CASE 
-                        WHEN email LIKE '%gmail.com' THEN 'smtp.gmail.com'
-                        WHEN email LIKE '%outlook.com' OR email LIKE '%hotmail.com' OR email LIKE '%live.com' THEN 'smtp.office365.com'
-                        WHEN email LIKE '%yahoo.com' THEN 'smtp.mail.yahoo.com'
-                        WHEN email LIKE '%aol.com' THEN 'smtp.aol.com'
-                        ELSE 'smtp.' || SPLIT_PART(email, '@', 2)
-                    END
-                ) as smtp_host,
-                COALESCE(smtp_port, 587) as smtp_port,
-                use_ssl as smtp_use_ssl,
-                secure as smtp_use_tls,
-                notes
+                password_encrypted as password,
+                provider_type as provider,
+                imap_host,
+                imap_port,
+                imap_use_ssl,
+                smtp_host,
+                smtp_port,
+                smtp_use_ssl,
+                smtp_use_tls,
+                is_active,
+                created_at,
+                updated_at
             FROM credentials_email
-            WHERE password IS NOT NULL
-            AND password != ''
-            AND is_processed = false
+            WHERE password_encrypted IS NOT NULL
+            AND password_encrypted != ''
+            AND is_active = true
         """
         
+        print("Executing query to fetch email accounts...")
         records = await pool.fetch(query)
+        print(f"Found {len(records)} email accounts in the database")
         
         if not records:
             print("No active email accounts found in the database.")
@@ -694,6 +681,9 @@ async def fetch_credentials(pool):
                     try:
                         # Get the Fernet key and decrypt the password
                         fernet_key = get_fernet_key()
+                        print(f"   🔑 Attempting to decrypt password for {record['email']}")
+                        print(f"   🔑 Encrypted data length: {len(encrypted_data)} characters")
+                        print(f"   🔑 Encrypted data starts with: {encrypted_data[:10]}...")
                         password = decrypt_fernet(encrypted_data)
                         print(f"   ✅ Password decrypted successfully for {record['email']}")
                         

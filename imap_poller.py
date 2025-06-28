@@ -14,6 +14,52 @@ from email.header import decode_header
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple, Union, Any
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+import hashlib
+import json
+import os
+import signal
+import sys
+from functools import wraps
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+def retry_imap_operation(max_retries=3, initial_delay=1, backoff=2):
+    """
+    Decorator to retry IMAP operations with exponential backoff.
+    
+    Args:
+        max_retries: Maximum number of retry attempts
+        initial_delay: Initial delay between retries in seconds
+        backoff: Multiplier for delay between retries
+    """
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            retries = 0
+            current_delay = initial_delay
+            
+            while retries < max_retries:
+                try:
+                    return await func(*args, **kwargs)
+                except (imaplib.IMAP4.abort, ConnectionError, TimeoutError) as e:
+                    retries += 1
+                    if retries >= max_retries:
+                        print(f"❌ Max retries ({max_retries}) reached for {func.__name__}. Last error: {str(e)}")
+                        raise
+                    
+                    print(f"⚠️  Attempt {retries}/{max_retries} failed: {str(e)}. Retrying in {current_delay} seconds...")
+                    await asyncio.sleep(current_delay)
+                    current_delay *= backoff
+                except Exception as e:
+                    print(f"❌ Unexpected error in {func.__name__}: {str(e)}")
+                    raise
+        return wrapper
+    return decorator
 
 # Constants
 MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024  # 10MB
@@ -26,8 +72,29 @@ os.makedirs(ATTACHMENTS_DIR, exist_ok=True)
 from dotenv import load_dotenv
 import os
 
+# Print current working directory for debugging
+print(f"Current working directory: {os.getcwd()}")
+
 # Load environment variables from .env file
-load_dotenv()
+print("🔍 Loading environment variables...")
+env_path = os.path.join(os.path.dirname(__file__), '.env')
+print(f"Looking for .env file at: {env_path}")
+
+if os.path.exists(env_path):
+    print("✅ .env file found")
+    with open(env_path, 'r') as f:
+        print("Contents of .env file:", f.read()[:100] + "..." if os.path.getsize(env_path) > 100 else f.read())
+else:
+    print("❌ .env file not found")
+
+# Load environment variables
+load_dotenv(env_path, override=True)
+
+# Debug: Verify environment variables
+print("\nEnvironment variables:")
+print(f"DJANGO_SECRET_KEY is set: {'Yes' if os.getenv('DJANGO_SECRET_KEY') else 'No'}")
+print(f"DATABASE_URL is set: {'Yes' if os.getenv('DATABASE_URL') else 'No'}")
+
 
 # Database configuration from environment variables
 # Using DATABASE_URL as the primary configuration source
@@ -514,9 +581,69 @@ async def cleanup_old_records(pool) -> None:
             """
         )
 
-async def fetch_credentials(pool):
-    """Fetch email credentials from the credentials_email table with provider-specific settings."""
+def get_fernet_key():
+    """
+    Generate Fernet key using the same method as Django's default encryption.
+    Uses DJANGO_SECRET_KEY from environment variables.
+    """
+    secret_key = os.getenv('DJANGO_SECRET_KEY')
+    if not secret_key:
+        raise ValueError("DJANGO_SECRET_KEY environment variable is not set")
+    
+    salt = secret_key[:16].encode()
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        iterations=100000,
+    )
+    key = base64.urlsafe_b64encode(kdf.derive(secret_key.encode()))
+    return key
+
+def decrypt_fernet(encrypted_data: str) -> str:
+    """
+    Decrypt a password that was encrypted using the same key generation method.
+    
+    Args:
+        encrypted_data: The encrypted password string (starts with 'gAA' or 'ENC:')
+        
+    Returns:
+        str: The decrypted password
+        
+    Raises:
+        ValueError: If decryption fails or password is not encrypted
+    """
+    if not encrypted_data:
+        raise ValueError("No password provided")
+        
+    # Remove 'ENC:' prefix if present
+    if encrypted_data.startswith('ENC:'):
+        encrypted_data = encrypted_data[4:]
+    
+    # If it doesn't look like an encrypted password, return as-is
+    if not encrypted_data.startswith('gAA'):
+        return encrypted_data
+    
     try:
+        f = Fernet(get_fernet_key())
+        decrypted = f.decrypt(encrypted_data.encode())
+        return decrypted.decode('utf-8')
+    except Exception as e:
+        raise ValueError(f"Failed to decrypt password: {str(e)}")
+
+async def fetch_credentials(pool):
+    """Fetch email credentials from the credentials_email table with provider-specific settings.
+    
+    Expects password to be encrypted with Fernet in the format:
+    - ENC:encrypted_data
+    
+    The DJANGO_SECRET_KEY environment variable must be set for decryption.
+    """
+    print("\n=== Fetching email credentials ===")
+    try:
+        # Get the Fernet key from DJANGO_SECRET_KEY
+        fernet_key = get_fernet_key()
+            
         # Query to get all email accounts with their provider settings
         query = """
             SELECT 
@@ -549,9 +676,6 @@ async def fetch_credentials(pool):
                 COALESCE(smtp_port, 587) as smtp_port,
                 use_ssl as smtp_use_ssl,
                 secure as smtp_use_tls,
-                created_at,
-                updated_at,
-                is_processed,
                 notes
             FROM credentials_email
             WHERE password IS NOT NULL
@@ -568,22 +692,65 @@ async def fetch_credentials(pool):
         # Convert records to list of dicts
         credentials = []
         for record in records:
-            cred = {
-                'email': record['email'],
-                'password': record['password'],
-                'imap': {
-                    'host': record['imap_host'],
-                    'port': record['imap_port'],
-                    'use_ssl': record['imap_use_ssl']
-                },
-                'smtp': {
-                    'host': record['smtp_host'],
-                    'port': record['smtp_port'],
-                    'use_ssl': record['smtp_use_ssl'],
-                    'use_tls': record['smtp_use_tls']
+            try:
+                # Get the password and check if it's encrypted
+                password = record['password']
+                is_encrypted = False
+                
+                # Check if password is encrypted (with or without 'ENC:' prefix)
+                if isinstance(password, str):
+                    if password.startswith('ENC:'):
+                        # Handle legacy format with 'ENC:' prefix
+                        print(f"🔑 Decrypting password for {record['email']}")
+                        encrypted_data = password[4:]  # Remove 'ENC:' prefix
+                        is_encrypted = True
+                    elif password.startswith('gAAAA'):
+                        # Handle encrypted password without prefix
+                        print(f"🔑 Decrypting password for {record['email']}")
+                        encrypted_data = password
+                        is_encrypted = True
+                
+                if is_encrypted:
+                    try:
+                        # Get the Fernet key and decrypt the password
+                        fernet_key = get_fernet_key()
+                        password = decrypt_fernet(encrypted_data)
+                        print(f"   ✅ Password decrypted successfully for {record['email']}")
+                        
+                    except Exception as e:
+                        print(f"Error: Failed to decrypt password for {record['email']}: {type(e).__name__} - {str(e)}")
+                        continue
+                
+                cred = {
+                    'email': record['email'],
+                    'password': password,
+                    'imap': {
+                        'host': record['imap_host'],
+                        'port': record['imap_port'],
+                        'use_ssl': record['imap_use_ssl'],
+                        'secure': record['imap_secure']
+                    },
+                    'smtp': {
+                        'host': record['smtp_host'],
+                        'port': record['smtp_port'],
+                        'use_ssl': record['smtp_use_ssl'],
+                        'use_tls': record['smtp_use_tls']
+                    },
+                    'provider': record['provider']
                 }
-            }
-            credentials.append(cred)
+                
+                # Add optional fields if they exist
+                if 'name' in record and record['name'] is not None:
+                    cred['name'] = record['name']
+                if 'notes' in record and record['notes'] is not None:
+                    cred['notes'] = record['notes']
+                    
+                credentials.append(cred)
+                
+            except Exception as e:
+                print(f"Error processing credentials for {record.get('email', 'unknown')}: {str(e)}")
+                continue
+                
         return credentials
         
     except Exception as e:
@@ -869,6 +1036,7 @@ async def process_single_email(mail, num: str, email_address: str, folder: str, 
         # Clean up any partial downloads
         pass
 
+@retry_imap_operation(max_retries=3, initial_delay=1, backoff=2)
 async def process_inbox(cred, pool):
     """Process emails for a single account with database connection pool.
     
@@ -934,35 +1102,81 @@ async def process_inbox(cred, pool):
                 
             # Attempt login with better error reporting
             print(f"   🔐 Attempting login as {email_address}...")
-            print(f"   Debug - Password length: {len(password) if password else 0}, starts with: {password[:2] if password else 'N/A'}...")
             
             # Ensure email and password are strings, not bytes
             if isinstance(email_address, bytes):
                 email_address = email_address.decode('utf-8')
+                
             if isinstance(password, bytes):
                 password = password.decode('utf-8')
             
-            # Try login with proper error handling
+            # Ensure we have a valid password
+            if not password:
+                error_msg = "No password provided for login"
+                print(f"❌ {error_msg}")
+                await log_error(pool, email_address, 'login_error', error_msg)
+                return False
+                
+            # Get the password from credentials
+            password = cred['password']
+            
+            # Check if password is still encrypted (shouldn't happen)
+            if isinstance(password, str) and (password.startswith('ENC:') or password.startswith('gAA')):
+                error_msg = "Password appears to be encrypted but should be decrypted by now"
+                print(f"⚠️  {error_msg}")
+                await log_error(pool, email_address, 'login_error', error_msg)
+                return False
+            
+            # Minimal debug output
+            print(f"   Connecting to {cred['imap']['host']}:{cred['imap']['port']} (SSL: {cred['imap'].get('use_ssl', True)})")
             try:
-                mail.login(email_address, password)
-                print("   ✅ Login successful")
+                mail.login(email_address, password.strip())
+                print("   Login successful")
+                
+                # Only proceed with email processing if login was successful
+                try:
+                    # List all mailboxes (for debugging)
+                    print("\nAvailable mailboxes:")
+                    status, mailboxes = mail.list()
+                    if status == 'OK':
+                        for mailbox in mailboxes[:5]:  # Show first 5 mailboxes
+                            print(f"   - {mailbox.decode()}")
+                    
+                    # Select the INBOX
+                    status, messages = mail.select('INBOX')
+                    if status != 'OK':
+                        print(f"   Cannot access INBOX: {messages}")
+                        return False
+                        
+                    print(f"   Selected INBOX, {messages[0].decode()} messages")
+                    
+                    # Process the INBOX
+                    error_count = await process_email_folder(mail, 'INBOX', email_address, pool)
+                    if error_count > 0:
+                        print(f"   Encountered {error_count} errors while processing emails")
+                    
+                    return True
+                    
+                except Exception as process_error:
+                    print(f"   Error processing emails: {str(process_error)}")
+                    import traceback
+                    traceback.print_exc()
+                    return False
+                
             except imaplib.IMAP4.error as login_error:
                 error_msg = str(login_error).lower()
-                print(f"   ❌ Raw error: {repr(login_error)}")
+                print(f"   Login failed: {error_msg}")
+                if 'invalid credentials' in error_msg or 'bad username or password' in error_msg:
+                    print("   Please verify your email and password are correct.")
+                    print("   If using Gmail, ensure you've generated an App Password if 2FA is enabled.")
                 
-                # Check for common issues
-                if any(msg in error_msg for msg in ['invalid', 'bad username or password', 'login failed']):
-                    print("   ❌ Login failed: Invalid username or password")
-                    print("      Please verify:")
-                    print("      1. Your username and password are correct")
-                    print("      2. You're using the correct authentication method")
-                    print("      3. IMAP access is enabled in your account settings")
-                    if 'gmail' in host:
-                        print("         For Gmail, you might need an App Password if 2FA is enabled")
-                elif any(msg in error_msg for msg in ['account is locked', 'temporary block']):
-                    print("   ❌ Login failed: Account is temporarily locked")
-                    print("      Please check your email for security alerts and unlock your account")
-                elif 'auth' in error_msg or 'oauth' in error_msg.lower():
+                # Log the error with the masked password for security
+                masked_password = f"{password[:2]}{'*' * (len(password)-4)}{password[-2:]}" if password and len(password) > 4 else "*" * (len(password) if password else 0)
+                error_details = f"{error_msg} (password: {masked_password})"
+                await log_error(pool, email_address, 'login_error', error_details)
+                return False
+                
+                if 'auth' in error_msg or 'oauth' in error_msg.lower():
                     print("   ❌ Authentication failed")
                     print("      This account may require OAuth2 authentication")
                     print("      Consider using OAuth2 for authentication")
@@ -1106,11 +1320,42 @@ async def process_inbox(cred, pool):
                 print(f"   ⚠️  {error_msg}")
                 await log_error(pool, email_address, 'logout_error', error_msg)
 
+def setup_graceful_shutdown(loop):
+    """Setup handlers for graceful shutdown."""
+    shutdown_requested = False
+    
+    def shutdown_handler(signum, frame):
+        nonlocal shutdown_requested
+        if shutdown_requested:
+            print("\n🛑 Force shutdown requested...")
+            os._exit(1)
+            
+        print("\n🛑 Received shutdown signal. Cleaning up... (Press Ctrl+C again to force)")
+        shutdown_requested = True
+        
+        # Cancel all running tasks except the current one
+        for task in asyncio.all_tasks(loop=loop):
+            if task is not asyncio.current_task(loop=loop):
+                task.cancel()
+
+    # Register signal handlers
+    if sys.platform != 'win32':
+        # Unix systems
+        try:
+            loop.add_signal_handler(signal.SIGTERM, shutdown_handler, signal.SIGTERM, None)
+        except (NotImplementedError, RuntimeError):
+            pass  # Not supported on this platform
+    signal.signal(signal.SIGINT, shutdown_handler)
+
 async def main():
     """Main entry point with database connection management."""
     pool = None
     
     try:
+        # Setup graceful shutdown
+        loop = asyncio.get_running_loop()
+        setup_graceful_shutdown(loop)
+        
         # Initialize database connection pool
         pool = await get_db_pool()
         print("✅ Database connection pool created")
@@ -1129,7 +1374,7 @@ async def main():
         
         while True:
             cycle_start = time.time()
-            print("\n🔄 Starting new poll cycle at")
+            print("\nStarting new poll cycle at")
             print(datetime.now().isoformat())
             
             try:
@@ -1137,11 +1382,11 @@ async def main():
                 credentials = await fetch_credentials(pool)
                 
                 if not credentials:
-                    print("⚠️  No active email accounts found. Waiting 60 seconds...")
+                    print("No active email accounts found. Waiting 60 seconds...")
                     await asyncio.sleep(60)
                     continue
                 
-                print(f"ℹ️  Found {len(credentials)} active email accounts")
+                print(f"Found {len(credentials)} active email accounts")
                 
                 # Process each account
                 tasks = []
@@ -1166,12 +1411,13 @@ async def main():
                 await log_metric(pool, 'poll_cycle_duration', cycle_duration)
                 await log_metric(pool, 'poll_cycle_complete', 1)
                 
-                # Calculate sleep time (minimum 30 seconds between cycles)
+                # Calculate sleep time (5 minutes between cycles)
+                poll_interval = 300  # 5 minutes in seconds
                 cycle_duration = time.time() - cycle_start
-                sleep_time = max(30, 30 - cycle_duration)  # At least 30 seconds between cycles
+                sleep_time = max(10, poll_interval - cycle_duration)  # At least 10 seconds between cycles
                 
                 print(f"✅ Poll cycle completed in {cycle_duration:.2f} seconds")
-                print(f"⏳ Next poll in {sleep_time:.0f} seconds...")
+                print(f"⏳ Next poll in {sleep_time/60:.1f} minutes...")
                 
                 # Sleep before next poll
                 await asyncio.sleep(sleep_time)
@@ -1201,5 +1447,32 @@ async def main():
                 print("\n⚠️  Error closing database pool:")
                 print(str(e))
 
+async def shutdown(loop):
+    """Cleanup tasks tied to the service's shutdown."""
+    print("\n🧹 Cleaning up resources...")
+    
+    # Cancel all running tasks
+    tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+    [task.cancel() for task in tasks]
+    
+    # Wait for all tasks to be cancelled
+    await asyncio.gather(*tasks, return_exceptions=True)
+    
+    # Close the loop
+    loop.stop()
+    print("✅ Cleanup complete")
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    try:
+        loop.run_until_complete(main())
+    except KeyboardInterrupt:
+        print("\n👋 Shutdown requested. Exiting...")
+    except Exception as e:
+        print(f"\n❌ Unexpected error: {str(e)}")
+    finally:
+        loop.run_until_complete(shutdown(loop))
+        loop.close()
+        print("👋 Goodbye!")

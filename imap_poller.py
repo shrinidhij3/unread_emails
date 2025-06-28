@@ -23,10 +23,8 @@ import os
 import signal
 import sys
 from functools import wraps
-from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+# Using environment variables directly from the system
 
 def retry_imap_operation(max_retries=3, initial_delay=1, backoff=2):
     """
@@ -68,32 +66,13 @@ ATTACHMENTS_DIR = 'attachments'
 # Create attachments directory if it doesn't exist
 os.makedirs(ATTACHMENTS_DIR, exist_ok=True)
 
-# Load environment variables
-from dotenv import load_dotenv
-import os
-
 # Print current working directory for debugging
 print(f"Current working directory: {os.getcwd()}")
 
-# Load environment variables from .env file
-print("🔍 Loading environment variables...")
-env_path = os.path.join(os.path.dirname(__file__), '.env')
-print(f"Looking for .env file at: {env_path}")
-
-if os.path.exists(env_path):
-    print("✅ .env file found")
-    with open(env_path, 'r') as f:
-        print("Contents of .env file:", f.read()[:100] + "..." if os.path.getsize(env_path) > 100 else f.read())
-else:
-    print("❌ .env file not found")
-
-# Load environment variables
-load_dotenv(env_path, override=True)
-
-# Debug: Verify environment variables
-print("\nEnvironment variables:")
-print(f"DJANGO_SECRET_KEY is set: {'Yes' if os.getenv('DJANGO_SECRET_KEY') else 'No'}")
-print(f"DATABASE_URL is set: {'Yes' if os.getenv('DATABASE_URL') else 'No'}")
+# Debug: Verify environment variables are set
+print("\n🔍 Checking required environment variables:")
+print(f"DJANGO_SECRET_KEY is set: {'✅' if os.getenv('DJANGO_SECRET_KEY') else '❌'}")
+print(f"DATABASE_URL is set: {'✅' if os.getenv('DATABASE_URL') else '❌'}")
 
 
 # Database configuration from environment variables
@@ -1356,14 +1335,17 @@ def setup_graceful_shutdown(loop):
             if task is not asyncio.current_task(loop=loop):
                 task.cancel()
 
-    # Register signal handlers
-    if sys.platform != 'win32':
-        # Unix systems
-        try:
-            loop.add_signal_handler(signal.SIGTERM, shutdown_handler, signal.SIGTERM, None)
-        except (NotImplementedError, RuntimeError):
-            pass  # Not supported on this platform
-    signal.signal(signal.SIGINT, shutdown_handler)
+    # Register signal handlers only in the main thread
+    if threading.current_thread() is threading.main_thread():
+        if sys.platform != 'win32':
+            # Unix systems
+            try:
+                loop.add_signal_handler(signal.SIGTERM, shutdown_handler, signal.SIGTERM, None)
+            except (NotImplementedError, RuntimeError):
+                pass  # Not supported on this platform
+        signal.signal(signal.SIGINT, shutdown_handler)
+    else:
+        print("⚠️  Not in main thread, skipping signal handler registration")
 
 async def main():
     """Main entry point with database connection management."""

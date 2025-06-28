@@ -4,7 +4,6 @@ import os
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 import json
-from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends, status, BackgroundTasks, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field, validator, HttpUrl
@@ -212,10 +211,8 @@ async def startup():
     global poller_thread, poller_running, _db_pool
     
     try:
-        # Load environment variables
-        load_dotenv()
-
-                # Initialize connection manager without config - will be configured when needed
+        # Using environment variables directly from the system
+        # Initialize connection manager without config - will be configured when needed
         global connection_manager
         
         # Default IMAP configuration from environment variables

@@ -722,16 +722,14 @@ async def fetch_credentials(pool):
                         if isinstance(password, str):
                             # Check for ENC: prefix or Fernet token format (starts with gAAAAA)
                             if password.startswith('ENC:'):
-                                logger.debug("Detected ENC: prefixed password")
+                                logger.debug("Decrypting password with ENC: prefix")
                                 password = password[4:]  # Remove 'ENC:' prefix
                                 password = decrypt_fernet(password)
-                                logger.debug("Successfully decrypted password")
                             elif password.startswith('gAAAAA'):
-                                logger.debug("Detected Fernet-encrypted password")
+                                logger.debug("Decrypting Fernet-encrypted password")
                                 password = decrypt_fernet(password)
-                                logger.debug("Successfully decrypted Fernet password")
                             else:
-                                logger.debug("Using plaintext password")
+                                logger.debug("Using password from database")
                         # Handle bytes passwords
                         elif isinstance(password, bytes):
                             try:
@@ -740,10 +738,10 @@ async def fetch_credentials(pool):
                                     password = decrypt_fernet(
                                         password_str[4:] if password_str.startswith('ENC:') else password_str
                                     )
-                                    logger.debug("Successfully decrypted password from bytes")
+                                    logger.debug("Decrypted password from bytes")
                                 else:
                                     password = password_str
-                                    logger.debug("Using plaintext password from bytes")
+                                    logger.debug("Using password from database (bytes)")
                             except Exception as e:
                                 logger.error(f"Could not process password bytes: {str(e)}")
                                 continue

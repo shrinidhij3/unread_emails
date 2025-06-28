@@ -34,4 +34,4 @@ RUN useradd -m myuser && chown -R myuser:myuser /app
 USER myuser
 
 # Command to run the application
-CMD ["gunicorn", "--config", "gunicorn_config.py", "email_sender:app"]
+CMD ["gunicorn", "--config", "gunicorn_config.py", "wsgi:application"]

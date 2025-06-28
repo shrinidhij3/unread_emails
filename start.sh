@@ -7,7 +7,20 @@ set -e
 #   sleep 1
 # done
 
-echo "✅ PostgreSQL is ready"
+echo "✅ Starting application..."
+echo "Using Python: $(which python)"
+echo "Python version: $(python --version)"
+echo "Current directory: $(pwd)"
+echo "Files in directory: $(ls -la)"
+
+exec gunicorn --worker-class=uvicorn.workers.UvicornWorker \
+    --workers=2 \
+    --bind=0.0.0.0:${PORT:-10000} \
+    --timeout=120 \
+    --access-logfile - \
+    --error-logfile - \
+    --log-level=debug \
+    email_sender:app
 
 # Run database migrations (if any)
 # python manage.py migrate

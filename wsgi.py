@@ -5,6 +5,13 @@ It exposes the WSGI callable as a module-level variable named ``application``.
 """
 
 import os
+import sys
+from pathlib import Path
+
+# Add the current directory to the Python path
+sys.path.append(str(Path(__file__).parent))
+
+# Import the FastAPI app from email_sender
 from email_sender import app
 
 # This allows gunicorn to find the app

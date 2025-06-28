@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
@@ -485,6 +486,7 @@ async def send_email(email_data: EmailRequest, request: Request):
             }
         )
 
+# This allows the app to be used with uvicorn directly
 if __name__ == "__main__":
     import uvicorn
     

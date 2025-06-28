@@ -8,7 +8,7 @@ services:
     region: singapore
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn --worker-class=uvicorn.workers.UvicornWorker --workers=2 --bind 0.0.0.0:$PORT email_sender:app
+    startCommand: gunicorn -c gunicorn_config.py email_sender:app
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0

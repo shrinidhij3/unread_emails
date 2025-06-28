@@ -29,7 +29,12 @@ app = FastAPI(
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint for Render and monitoring"""
+    """Health check endpoint for monitoring"""
+    return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
+
+@app.get("/healthz")
+async def healthz():
+    """Health check endpoint for Render (matches their default path)"""
     return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
 
 # Load environment variables from .env file

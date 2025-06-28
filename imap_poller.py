@@ -1435,88 +1435,123 @@ async def process_inbox(cred, pool):
                 await log_error(pool, email_address, 'logout_error', error_msg)
 
 async def main():
-    """Main entry point with database connection management."""
+    """Main entry point with database connection management and enhanced logging."""
     pool = None
+    logger = logging.getLogger(__name__)
     
     try:
+        logger.info("Initializing IMAP Poller service")
+        
         # Initialize database connection pool
-        pool = await get_db_pool()
-        print("✅ Database connection pool created")
-        
-        # Ensure database schema exists
         try:
-            async with pool.acquire() as conn:
-                await conn.execute(DB_SCHEMA)
-                print("✅ Database schema verified/created")
-        except Exception as e:
-            print(f"❌ Error initializing database schema: {str(e)}")
-            raise
-        
-        # Initial cleanup of old records
-        await cleanup_old_records(pool)
-        
-        while True:
-            cycle_start = time.time()
-            print("\nStarting new poll cycle at")
-            print(datetime.now().isoformat())
+            pool = await get_db_pool()
+            logger.info("Database connection pool created successfully")
             
+            # Ensure database schema exists
             try:
-                # Fetch credentials from database
-                credentials = await fetch_credentials(pool)
-                
-                if not credentials:
-                    print("No active email accounts found. Waiting 60 seconds...")
-                    await asyncio.sleep(60)
-                    continue
-                
-                print(f"Found {len(credentials)} active email accounts")
-                
-                # Process each account
-                tasks = []
-                for cred in credentials:
-                    try:
-                        task = asyncio.create_task(process_inbox(cred, pool))
-                        tasks.append(task)
-                    except Exception as e:
-                        print(f"⚠️  Error creating task for {cred.get('email', 'unknown')}: {str(e)}")
-                
-                # Wait for all tasks to complete
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-                
-                # Log any errors from tasks
-                for i, result in enumerate(results):
-                    if isinstance(result, Exception):
-                        email = credentials[i].get('email', 'unknown')
-                        print(f"⚠️  Error processing {email}: {str(result)}")
-                
-                # Log metrics
-                cycle_duration = time.time() - cycle_start
-                await log_metric(pool, 'poll_cycle_duration', cycle_duration)
-                await log_metric(pool, 'poll_cycle_complete', 1)
-                
-                # Calculate sleep time (minimum 30 seconds between cycles)
-                cycle_duration = time.time() - cycle_start
-                sleep_time = max(30, 30 - cycle_duration)  # At least 30 seconds between cycles
-                
-                print(f"✅ Poll cycle completed in {cycle_duration:.2f} seconds")
-                print(f"⏳ Next poll in {sleep_time:.0f} seconds...")
-                
-                # Sleep before next poll
-                await asyncio.sleep(sleep_time)
-                
+                async with pool.acquire() as conn:
+                    await conn.execute(DB_SCHEMA)
+                    logger.info("Database schema verified/created")
             except Exception as e:
-                error_msg = f"Error in main loop: {str(e)}"
-                print("\n⚠️  ")
-                print(error_msg)
-                await log_error(pool, 'system', 'main_loop_error', error_msg)
-                await asyncio.sleep(60)  # Wait a bit before retrying
+                logger.error(f"Error initializing database schema: {str(e)}")
+                logger.debug(f"Schema error details: {traceback.format_exc()}")
+                raise
+            
+            # Initial cleanup of old records
+            await cleanup_old_records(pool)
+            logger.info("Initial cleanup of old records completed")
+            
+            while True:
+                cycle_start = time.time()
+                cycle_id = str(uuid.uuid4())[:8]  # Short ID for logging
+                logger.info(f"Starting poll cycle {cycle_id} at {datetime.now(timezone.utc).isoformat()}")
                 
+                try:
+                    # Fetch credentials from database
+                    credentials = await fetch_credentials(pool)
+                    
+                    if not credentials:
+                        logger.warning("No active email accounts found. Waiting 60 seconds...")
+                        await asyncio.sleep(60)
+                        continue
+                    
+                    logger.info(f"Found {len(credentials)} active email accounts")
+                    
+                    # Process each account
+                    tasks = []
+                    for cred in credentials:
+                        try:
+                            email = cred.get('email', 'unknown')
+                            logger.debug(f"Creating task for email: {email}")
+                            task = asyncio.create_task(process_inbox(cred, pool))
+                            tasks.append((email, task))
+                        except Exception as e:
+                            logger.error(f"Error creating task for {cred.get('email', 'unknown')}: {str(e)}")
+                            logger.debug(f"Task creation error details: {traceback.format_exc()}")
+                    
+                    # Wait for all tasks to complete with timeout
+                    results = []
+                    if tasks:
+                        task_objects = [task for _, task in tasks]
+                        task_results = await asyncio.gather(*task_objects, return_exceptions=True)
+                        
+                        # Log results for each task
+                        for (email, _), result in zip(tasks, task_results):
+                            if isinstance(result, Exception):
+                                logger.error(f"Error processing {email}: {str(result)}")
+                                logger.debug(f"Task error details: {traceback.format_exc()}")
+                            results.append((email, result))
+                    
+                    # Log metrics
+                    cycle_duration = time.time() - cycle_start
+                    try:
+                        await log_metric(pool, 'poll_cycle_duration', cycle_duration)
+                        await log_metric(pool, 'poll_cycle_complete', 1)
+                    except Exception as e:
+                        logger.error(f"Error logging metrics: {str(e)}")
+                    
+                    # Calculate sleep time (minimum 30 seconds between cycles)
+                    sleep_time = max(30, 30 - cycle_duration)
+                    
+                    logger.info(
+                        f"Poll cycle {cycle_id} completed in {cycle_duration:.2f} seconds. "
+                        f"Next poll in {sleep_time:.0f} seconds..."
+                    )
+                    
+                    # Sleep before next poll
+                    await asyncio.sleep(sleep_time)
+                    
+                except asyncio.CancelledError:
+                    logger.info("Received cancellation signal, shutting down...")
+                    raise
+                except Exception as e:
+                    error_msg = f"Error in main loop: {str(e)}"
+                    logger.error(error_msg)
+                    logger.debug(f"Main loop error details: {traceback.format_exc()}")
+                    
+                    if pool:
+                        try:
+                            await log_error(pool, 'system', 'main_loop_error', error_msg)
+                        except Exception as log_err:
+                            logger.error(f"Failed to log error to database: {str(log_err)}")
+                    
+                    await asyncio.sleep(60)  # Wait a bit before retrying
+                    
+        except Exception as e:
+            logger.critical(f"Failed to initialize database connection: {str(e)}")
+            logger.debug(f"Database initialization error details: {traceback.format_exc()}")
+            raise
+            
     except Exception as e:
-        error_msg = f"Fatal error: {str(e)}"
-        print("\n❌ ")
-        print(error_msg)
+        error_msg = f"Fatal error in IMAP Poller: {str(e)}"
+        logger.critical(error_msg)
+        logger.debug(f"Fatal error details: {traceback.format_exc()}")
+        
         if pool:
-            await log_error(pool, 'system', 'fatal_error', error_msg)
+            try:
+                await log_error(pool, 'system', 'fatal_error', error_msg)
+            except Exception as log_err:
+                logger.error(f"Failed to log fatal error to database: {str(log_err)}")
         raise
         
     finally:
@@ -1524,40 +1559,106 @@ async def main():
         if pool:
             try:
                 await pool.close()
-                print("\n✅ Database connection pool closed.")
+                logger.info("Database connection pool closed successfully")
             except Exception as e:
-                print("\n⚠️  Error closing database pool:")
-                print(str(e))
+                logger.error(f"Error closing database pool: {str(e)}")
+                logger.debug(f"Pool close error details: {traceback.format_exc()}")
+
+def setup_logging():
+    """Configure logging with file and console handlers."""
+    # Create logs directory if it doesn't exist
+    log_dir = os.environ.get('LOG_DIR', 'logs')
+    os.makedirs(log_dir, exist_ok=True)
+    
+    # Configure root logger
+    logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG)
+    
+    # Create formatter
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
+    )
+    
+    # Console handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(formatter)
+    console_handler.setLevel(logging.INFO)
+    logger.addHandler(console_handler)
+    
+    # File handler
+    log_file = os.path.join(log_dir, 'imap_poller.log')
+    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    file_handler.setFormatter(formatter)
+    file_handler.setLevel(logging.DEBUG)
+    logger.addHandler(file_handler)
+    
+    # Set log levels for noisy libraries
+    logging.getLogger('asyncio').setLevel(logging.WARNING)
+    logging.getLogger('aiosmtplib').setLevel(logging.WARNING)
+    logging.getLogger('aiohttp').setLevel(logging.WARNING)
+    logging.getLogger('httpx').setLevel(logging.WARNING)
+    
+    return logger
 
 if __name__ == "__main__":
     import time
     
-    print("🚀 Starting IMAP Poller Service")
-    print(f"Python version: {sys.version}")
-    print(f"Current time: {datetime.now(timezone.utc).isoformat()}")
+    # Setup logging first
+    logger = setup_logging()
     
-    # Print environment variables (excluding sensitive ones)
-    print("\nEnvironment variables:")
-    for var in ['ENVIRONMENT', 'DB_HOST', 'DB_NAME', 'DB_USER', 'DJANGO_SECRET_KEY']:
-        value = os.environ.get(var)
-        if value and ('PASSWORD' in var or 'SECRET' in var or 'KEY' in var):
-            value = f"{value[:2]}...{value[-2:] if len(value) > 4 else ''} (length: {len(value)})"
-        print(f"  {var}: {value or 'Not set'}")
-    
-    # Main loop with restart capability
-    while True:
-        try:
-            print("\n" + "="*50)
-            print(f"🚀 Starting IMAP poller at {datetime.now(timezone.utc).isoformat()}")
-            asyncio.run(main())
-        except KeyboardInterrupt:
-            print("\n🛑 Received keyboard interrupt. Shutting down gracefully...")
-            break
-        except Exception as e:
-            print(f"\n⚠️  Error in main loop: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            print(f"\n🔄 Restarting in 30 seconds...")
-            time.sleep(30)
-    
-    print("\n👋 IMAP Poller Service stopped")
+    try:
+        logger.info("=" * 50)
+        logger.info("🚀 Starting IMAP Poller Service")
+        logger.info(f"Python version: {sys.version}")
+        logger.info(f"Current time: {datetime.now(timezone.utc).isoformat()}")
+        logger.info(f"Working directory: {os.getcwd()}")
+        
+        # Log environment variables (excluding sensitive ones)
+        logger.debug("Environment variables:")
+        for var in sorted(os.environ.keys()):
+            value = os.environ[var]
+            if any(s in var.upper() for s in ['PASS', 'SECRET', 'KEY', 'TOKEN']):
+                value = f"{'*' * 8} (hidden)"
+            logger.debug(f"  {var}: {value}")
+        
+        # Main loop with restart capability
+        restart_count = 0
+        max_restarts = 10
+        restart_delay = 30  # seconds
+        
+        while restart_count < max_restarts:
+            try:
+                logger.info("\n" + "="*50)
+                logger.info(f"🚀 Starting IMAP poller (attempt {restart_count + 1}/{max_restarts})")
+                logger.info(f"Start time: {datetime.now(timezone.utc).isoformat()}")
+                
+                asyncio.run(main())
+                
+                # If we get here, main() exited cleanly
+                logger.info("IMAP poller stopped cleanly")
+                break
+                
+            except KeyboardInterrupt:
+                logger.info("\n🛑 Received keyboard interrupt. Shutting down gracefully...")
+                break
+                
+            except Exception as e:
+                restart_count += 1
+                error_msg = f"Error in main loop (attempt {restart_count}/{max_restarts}): {str(e)}"
+                logger.error(error_msg, exc_info=True)
+                
+                if restart_count >= max_restarts:
+                    logger.critical(f"Maximum restart attempts ({max_restarts}) reached. Shutting down...")
+                    break
+                    
+                logger.info(f"🔄 Restarting in {restart_delay} seconds...")
+                time.sleep(restart_delay)
+                
+                # Exponential backoff for restart delay
+                restart_delay = min(300, restart_delay * 2)  # Cap at 5 minutes
+        
+        logger.info("👋 IMAP Poller Service stopped")
+        
+    except Exception as e:
+        logger.critical(f"Fatal error in main process: {str(e)}", exc_info=True)
+        sys.exit(1)

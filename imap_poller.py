@@ -1166,25 +1166,13 @@ async def process_inbox(cred, pool):
                 
             # Attempt login with better error reporting
             print(f"   🔐 Attempting login as {email_address}...")
-            print(f"   Debug - Password length: {len(password) if password else 0}, starts with: {password[:2] if password else 'N/A'}...")
             
             # Ensure email and password are strings, not bytes
-            print("\n🔍 DEBUG - Raw credentials:")
-            print(f"   Email (type: {type(email_address).__name__}): {email_address}")
-            print(f"   Password (type: {type(password).__name__}): {password[:10]}..." if password and len(password) > 10 else f"   Password: {password}")
-            
             if isinstance(email_address, bytes):
                 email_address = email_address.decode('utf-8')
-                print("   Decoded email from bytes to string")
                 
             if isinstance(password, bytes):
                 password = password.decode('utf-8')
-                print("   Decoded password from bytes to string")
-            
-            print("\n🔍 DEBUG - Processing credentials:")
-            print(f"   Email: {email_address}")
-            print(f"   Password type: {type(password).__name__}")
-            print(f"   Password starts with: {password[:4]}..." if password else "   No password")
             
             # Ensure we have a valid password
             if not password:
@@ -1194,28 +1182,8 @@ async def process_inbox(cred, pool):
             # Get the password from credentials
             password = cred['password']
             
-            # Debug output for password
-            print("\n" + "="*50)
-            print("🔑 PASSWORD DEBUGGING INFORMATION")
-            print("="*50)
-            print(f"\n[1/3] Password retrieved from credentials:")
-            print(f"   Type: {type(password).__name__}")
-            print(f"   Length: {len(password) if password else 0}")
-            
-            # Show masked password for security
-            if password and len(password) > 4:
-                masked = f"{password[:2]}{'*' * (len(password) - 4)}{password[-2:]}"
-            else:
-                masked = "*" * (len(password) if password else 0)
-            
-            print(f"   Masked password: {masked}")
-            
             # Check if password looks encrypted (starts with 'ENC:')
             is_encrypted = isinstance(password, str) and password.startswith('ENC:')
-            print(f"\n[2/3] Password analysis:")
-            print(f"   Appears encrypted: {'Yes' if is_encrypted else 'No'}")
-            if password:
-                print(f"   First 10 chars: {password[:10]}...")
             
             # Verify we have a password
             if not password:
@@ -1229,12 +1197,6 @@ async def process_inbox(cred, pool):
                 print("   This suggests an issue with the decryption process.")
             
             # Try login with the provided password
-            print(f"\n[3/3] Attempting IMAP login:")
-            print(f"   Email: {email_address}")
-            print(f"   IMAP Server: {cred['imap']['host']}:{cred['imap']['port']}")
-            print(f"   Using SSL: {cred['imap'].get('use_ssl', True)}")
-            print(f"   Password length: {len(password)}")
-            print("-"*50 + "\n")
             try:
                 mail.login(email_address, password.strip())
                 print("   Login successful")
@@ -1276,10 +1238,8 @@ async def process_inbox(cred, pool):
                     print("   Please verify your email and password are correct.")
                     print("   If using Gmail, ensure you've generated an App Password if 2FA is enabled.")
                 
-                # Log the error with the masked password for security
-                masked_password = f"{password[:2]}{'*' * (len(password)-4)}{password[-2:]}" if password and len(password) > 4 else "*" * (len(password) if password else 0)
-                error_details = f"{error_msg} (password: {masked_password})"
-                await log_error(pool, email_address, 'login_error', error_details)
+                # Log the error without any password information
+                await log_error(pool, email_address, 'login_error', error_msg)
                 return False
                 
                 if 'auth' in error_msg or 'oauth' in error_msg.lower():

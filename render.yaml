@@ -5,11 +5,9 @@ services:
   - type: web
     name: email-auto-responder
     env: python
-    region: singapore  # or choose another region closer to your users
-    plan: free  # or 'starter', 'standard', etc. for production
-    buildCommand: |
-      pip install -r requirements.txt
-      python run_migrations.py --migrate
+    region: singapore # or choose another region closer to your users
+    plan: free # or 'starter', 'standard', etc. for production
+    buildCommand: pip install -r requirements.txt
     startCommand: gunicorn --worker-class=uvicorn.workers.UvicornWorker --workers=2 --bind 0.0.0.0:$PORT email_api:app
     envVars:
       - key: PYTHON_VERSION
@@ -29,13 +27,13 @@ services:
           property: connectionString
     healthCheckPath: /health
     autoDeploy: true
-    
+
   - type: cron
-    name: email-poller-cron  # Updated: 
+    name: email-poller-cron # Updated:
     env: python
     region: singapore
     plan: free
-    schedule: "*/5 * * * *"  # Runs every 5 minutes
+    schedule: "*/5 * * * *" # Runs every 5 minutes
     buildCommand: pip install -r requirements.txt
     runCommand: python imap_poller.py
     envVars:
@@ -46,11 +44,10 @@ services:
       - key: ENVIRONMENT
         value: production
       # Database configuration for worker
-      - key: DATABASE_URL
-        fromService:
-          name: email-db
-          type: postgres
-          property: connectionString
+      - key: DB_USER
+        value: postgres
+      - key: DB_PASSWORD
+        fromDatabase:
           name: your-database-name
           property: connectionString
           envVar: DATABASE_URL

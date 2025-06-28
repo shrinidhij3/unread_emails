@@ -230,48 +230,25 @@ provider_registry = ProviderRegistry()
 class IMAPConnectionManager:
     """Manages IMAP connections with retry and error handling"""
     
-    def __init__(self, config: Dict[str, Any] = None):
-        self.config = config or {}
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
         self.logger = logging.getLogger(f'{__name__}.IMAPConnectionManager')
-        self.connection = None
     
-    def _validate_config(self):
-        """Validate that required configuration is present."""
-        required = ['imap_host', 'imap_port']
-        missing = [key for key in required if not self.config.get(key)]
-        if missing:
-            self.logger.warning(f"Missing required IMAP configuration: {', '.join(missing)}")
-            return False
-        return True
-
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
         retry=retry_if_exception_type(IMAPConnectionError),
         reraise=True
     )
-    async def connect(self) -> Optional[imaplib.IMAP4_SSL]:
-        """Connect to IMAP server if valid configuration is available."""
-        if not self.config:
-            self.logger.debug("No IMAP configuration provided")
-            return None
-            
-        if not self._validate_config():
-            self.logger.warning("Skipping IMAP connection due to invalid configuration")
-            return None
-            
+    async def connect(self) -> imaplib.IMAP4_SSL:
+        """Establish an IMAP connection with retry logic"""
         try:
             context = self._create_ssl_context()
-            use_ssl = self.config.get('imap_use_ssl', True)
-            host = self.config.get('imap_host')
-            port = self.config.get('imap_port')
             
-            self.logger.debug(f"Attempting to connect to IMAP server: {host}:{port} (SSL: {use_ssl})")
-            
-            if use_ssl:
+            if self.config.get('imap_use_ssl', True):
                 conn = imaplib.IMAP4_SSL(
-                    host=host,
-                    port=port,
+                    host=self.config['imap_host'],
+                    port=self.config['imap_port'],
                     ssl_context=context
                 )
             else:
@@ -536,7 +513,7 @@ class EmailAccountManager:
             if account.account_id is None:
                 # Insert new account
                 query = """
-                    INSERT INTO credentials_email (
+                    INSERT INTO email_accounts (
                         email, password_encrypted, password_salt, provider_type,
                         imap_host, imap_port, imap_use_ssl,
                         smtp_host, smtp_port, smtp_use_ssl, smtp_use_tls,
@@ -569,7 +546,7 @@ class EmailAccountManager:
             else:
                 # Update existing account
                 query = """
-                    UPDATE credentials_email
+                    UPDATE email_accounts
                     SET
                         email = $2,
                         password_encrypted = $3,
@@ -615,7 +592,7 @@ class EmailAccountManager:
         """Get account by ID"""
         async with self.db_pool.acquire() as conn:
             row = await conn.fetchrow(
-                'SELECT * FROM credentials_email WHERE id = $1',
+                'SELECT * FROM email_accounts WHERE id = $1',
                 account_id
             )
             
@@ -628,7 +605,7 @@ class EmailAccountManager:
         """Get account by email"""
         async with self.db_pool.acquire() as conn:
             row = await conn.fetchrow(
-                'SELECT * FROM credentials_email WHERE email = $1',
+                'SELECT * FROM email_accounts WHERE email = $1',
                 email.lower()
             )
             
@@ -645,7 +622,7 @@ class EmailAccountManager:
         offset: int = 0
     ) -> List[EmailAccount]:
         """List accounts with optional filters"""
-        query = 'SELECT * FROM credentials_email WHERE 1=1'
+        query = 'SELECT * FROM email_accounts WHERE 1=1'
         params = []
         
         if is_active is not None:
@@ -668,7 +645,7 @@ class EmailAccountManager:
         """Delete an account"""
         async with self.db_pool.acquire() as conn:
             result = await conn.execute(
-                'DELETE FROM credentials_email WHERE id = $1',
+                'DELETE FROM email_accounts WHERE id = $1',
                 account_id
             )
             return result == 'DELETE 1'

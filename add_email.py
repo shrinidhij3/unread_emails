@@ -2,8 +2,10 @@ import asyncio
 import asyncpg
 import os
 from datetime import datetime
+from dotenv import load_dotenv
 
 # Load environment variables from .env file
+load_dotenv()
 
 async def add_email_account():
     """Add a new email account to the credentials_email table."""

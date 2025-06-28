@@ -1,9 +1,11 @@
 import asyncio
 import asyncpg
 import os
-from datetime import datetime, timezone
+from datetime import datetime
+from dotenv import load_dotenv
 
 # Load environment variables from .env file
+load_dotenv()
 
 async def add_email_account():
     """Add a new email account to the credentials_email table."""
@@ -91,25 +93,6 @@ async def add_email_account():
         print("Enter password: ")
         password = input().strip()
         
-        # Get IMAP configuration
-        print("\nIMAP Configuration:")
-        print("IMAP Host (e.g., imap.gmail.com): ")
-        imap_host = input().strip()
-        print("IMAP Port (e.g., 993 for SSL, 143 for STARTTLS): ")
-        imap_port = int(input().strip())
-        print("Use SSL? (y/n, default: y): ")
-        imap_use_ssl = input().strip().lower() != 'n'
-        
-        # Get SMTP configuration (optional)
-        print("\nSMTP Configuration (press Enter to skip):")
-        print("SMTP Host (e.g., smtp.gmail.com): ")
-        smtp_host = input().strip() or None
-        smtp_port = None
-        if smtp_host:
-            print("SMTP Port (e.g., 465 for SSL, 587 for STARTTLS): ")
-            port_input = input().strip()
-            smtp_port = int(port_input) if port_input else None
-        
         # Try to insert the new account
         try:
             # First check if email already exists
@@ -122,38 +105,12 @@ async def add_email_account():
                 print("\n❌ Account with email already exists:")
                 print(email)
                 return
-            
-            # Get the provider type from email domain
-            provider_type = 'gmail' if 'gmail.com' in email.lower() else 'custom'
                 
-            # Insert new account with all required fields
+            # Insert new account
             await conn.execute('''
-                INSERT INTO credentials_email (
-                    email, password_encrypted, password_salt, provider_type,
-                    imap_host, imap_port, imap_use_ssl,
-                    smtp_host, smtp_port, smtp_use_ssl, smtp_use_tls,
-                    created_at, updated_at, is_active
-                ) VALUES (
-                    $1, $2, $3, $4,
-                    $5, $6, $7,
-                    $8, $9, $10, $11,
-                    $12, $13, TRUE
-                )
-            ''', 
-                email,  # email
-                password.encode('utf-8'),  # password_encrypted (temporarily storing plaintext, will be encrypted later)
-                os.urandom(16),  # password_salt (random salt)
-                provider_type,  # provider_type
-                imap_host,  # imap_host
-                imap_port,  # imap_port
-                imap_use_ssl,  # imap_use_ssl
-                smtp_host,  # smtp_host
-                smtp_port,  # smtp_port
-                smtp_host is not None,  # smtp_use_ssl
-                smtp_host is not None,  # smtp_use_tls
-                datetime.now(timezone.utc),  # created_at
-                datetime.now(timezone.utc)  # updated_at
-            )
+                INSERT INTO credentials_email (email, password, created_at, updated_at)
+                VALUES ($1, $2, $3, $4)
+            ''', email, password, datetime.now(), datetime.now())
             
             print("\n✅ Successfully added email account:")
             print(email)

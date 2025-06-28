@@ -17,8 +17,6 @@ from email.header import Header
 from email import policy
 import re
 from typing import Optional, Dict, Any, List, Union
-import threading
-import time
 
 from email_service import (
     ProviderType,
@@ -29,37 +27,6 @@ from email_service import (
     provider_registry,
     connection_manager
 )
-
-# Global variables for poller
-poller_thread = None
-poller_running = False
-last_run = None
-
-def run_poller_loop():
-    """Background function that runs the email poller in a loop"""
-    global last_run
-    while poller_running:
-        try:
-            logging.info("Starting email poll cycle")
-            asyncio.run(run_poller())
-            last_run = datetime.utcnow()
-            logging.info(f"Poll cycle completed at {last_run.isoformat()}")
-        except Exception as e:
-            logging.error(f"Error in poller: {str(e)}")
-        
-        # Sleep for 5 minutes, checking every second if we should stop
-        for _ in range(300):  # 300 seconds = 5 minutes
-            if not poller_running:
-                break
-            time.sleep(1)
-
-# Import the poller
-from imap_poller import main as run_poller
-
-# Global variables for poller
-poller_thread = None
-poller_running = False
-last_run = None
 
 # Configure logging
 logging.basicConfig(
@@ -201,107 +168,69 @@ async def get_sync_service() -> EmailSyncService:
     if _sync_service is None:
         if _account_manager is None:
             _account_manager = await get_account_manager()
-        _sync_service = EmailSyncService(_db_pool, account_manager=_account_manager)
+        _sync_service = EmailSyncService(_db_pool, _account_manager=_account_manager)
     return _sync_service
 
 # Startup and shutdown events
 @app.on_event("startup")
 async def startup():
-    """Initialize database connection, services, and start the poller."""
-    global poller_thread, poller_running, _db_pool
+    """Initialize database connection and services."""
+    global _db_pool, _crypto_service, _account_manager, _sync_service
     
     try:
-        # Using environment variables directly from the system
-        # Initialize connection manager without config - will be configured when needed
-        global connection_manager
+        # Get database configuration from environment variables
+        database_url = os.getenv("DATABASE_URL")
+        if not database_url:
+            raise ValueError("DATABASE_URL environment variable is not set")
+            
+        # Handle different URL formats
+        if database_url.startswith('postgres://'):
+            database_url = database_url.replace('postgres://', 'postgresql://', 1)
         
-        # Default IMAP configuration from environment variables
-        DEFAULT_IMAP_CONFIG = {
-            'imap_host': os.getenv('IMAP_HOST', ''),
-            'imap_port': int(os.getenv('IMAP_PORT', 993)),
-            'imap_use_ssl': os.getenv('IMAP_USE_SSL', 'true').lower() == 'true'
+        # Parse the URL to extract components for logging
+        from urllib.parse import urlparse
+        parsed = urlparse(database_url)
+        
+        # Create configuration for connection pool
+        db_config = {
+            "dsn": database_url,
+            "min_size": 1,
+            "max_size": 10,
+            "max_queries": 50000,
+            "max_inactive_connection_lifetime": 300.0,
+            "ssl": "require"  # Force SSL for security
         }
         
-        # Update connection manager config if we have IMAP settings
-        if DEFAULT_IMAP_CONFIG['imap_host']:
-            connection_manager.config.update(DEFAULT_IMAP_CONFIG)
-            logging.info(f"Configured IMAP connection manager with host: {DEFAULT_IMAP_CONFIG['imap_host']}")
+        # Log connection details (without credentials)
+        logger.info("Connecting to database using DATABASE_URL")
+        logger.info(f"Database host: {parsed.hostname}, port: {parsed.port or 5432}")
+        
+        # Initialize database connection pool
+        _db_pool = await asyncpg.create_pool(**db_config)
+        
+        # Test the connection
+        async with _db_pool.acquire() as conn:
+            version = await conn.fetchval('SELECT version()')
+            logger.info(f"Successfully connected to PostgreSQL: {version}")
             
-            # Test the connection
-            try:
-                conn = await connection_manager.connect()
-                if conn:
-                    logging.info("Successfully connected to IMAP server")
-                    conn.logout()
-                else:
-                    logging.warning("Could not establish IMAP connection with current configuration")
-            except Exception as e:
-                logging.error(f"Error testing IMAP connection: {str(e)}")
-        else:
-            logging.warning("No default IMAP configuration found. Email synchronization will not work until an account is added with valid IMAP settings.")
-
-        # Initialize services
-        crypto_service = await get_crypto_service()
-        account_manager = await get_account_manager()
-        sync_service = await get_sync_service()
-
-        # Verify database schema
-        try:
-            if not _db_pool:
-                _db_pool = await asyncpg.create_pool(dsn=os.getenv('DATABASE_URL'))
-                
-            async with _db_pool.acquire() as conn:
-                # Check if credentials_email table exists
-                table_exists = await conn.fetchval(
-                    """
-                    SELECT EXISTS (
-                        SELECT FROM information_schema.tables 
-                        WHERE table_schema = 'public' 
-                        AND table_name = 'credentials_email'
-                    );
-                    """
-                )
-                
-                if not table_exists:
-                    logging.warning("Database tables not found. Running migrations...")
-                    # Run migrations here if needed
-                    # await run_migrations()
-                    logging.info("Migrations completed")
-                
-                # Check if there are any email accounts
-                account_count = await conn.fetchval("SELECT COUNT(*) FROM credentials_email")
-                logging.info(f"Found {account_count} email accounts in the database")
-                
-        except Exception as e:
-            logging.error(f"Error verifying database schema: {str(e)}")
-            raise
-
-        # Start the poller in a separate thread
-        if poller_thread is None or not poller_thread.is_alive():
-            poller_running = True
-            poller_thread = threading.Thread(target=run_poller_loop, daemon=True)
-            poller_thread.start()
-            logging.info("Email poller started")
-
-        logging.info("Application startup complete")
-
+            # Log database name and current user for verification
+            db_name = await conn.fetchval('SELECT current_database()')
+            db_user = await conn.fetchval('SELECT current_user')
+            logger.info(f"Connected to database: {db_name} as user: {db_user}")
+            
+        logger.info("Database connection pool initialized successfully")
+        
     except Exception as e:
-        logging.error(f"Startup error: {str(e)}")
+        logger.error(f"Failed to initialize database connection pool: {e}")
+        logger.error("Please check your database configuration and ensure the database is accessible")
         raise
 
 @app.on_event("shutdown")
 async def shutdown():
-    """Clean up resources on application shutdown."""
-    global poller_running
-    
-    # Stop the poller
-    poller_running = False
-    if poller_thread and poller_thread.is_alive():
-        poller_thread.join(timeout=10)
-    
-    # Close database connection
-    await connection_manager.close()
-    logging.info("Application shutdown complete")
+    global _db_pool
+    if _db_pool:
+        await _db_pool.close()
+        logger.info("Database connection pool closed")
 
 # API Endpoints
 @app.post("/api/accounts", response_model=EmailAccountResponse, status_code=status.HTTP_201_CREATED)
@@ -500,28 +429,8 @@ async def root_check():
 
 @app.get("/health")
 async def health_check():
-    """
-    Health check endpoint for Render and other platforms
-    
-    Returns:
-        dict: Health status including poller information
-    """
-    return {
-        "status": "healthy",
-        "poller": {
-            "status": "running" if poller_running else "stopped",
-            "last_run": last_run.isoformat() if last_run else None,
-            "next_run_in": (
-                f"{300 - (datetime.utcnow() - last_run).total_seconds():.0f}s" 
-                if last_run and (datetime.utcnow() - last_run).total_seconds() < 300 
-                else "now"
-            ) if last_run else "pending"
-        },
-        "database": {
-            "connected": connection_manager.pool is not None,
-            "pool_size": connection_manager.pool.get_size() if connection_manager.pool else 0
-        }
-    }
+    """Health check endpoint for Render and other platforms"""
+    return {"status": "healthy"}
 
 @app.get("/healthz")
 async def healthz_check():

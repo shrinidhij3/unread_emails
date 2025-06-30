@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 import asyncio
 import asyncpg
 import email
@@ -88,16 +91,16 @@ import os
 print(f"Current working directory: {os.getcwd()}")
 
 # Load environment variables from .env file
-print("🔍 Loading environment variables...")
+print("≡ƒöì Loading environment variables...")
 env_path = os.path.join(os.path.dirname(__file__), '.env')
 print(f"Looking for .env file at: {env_path}")
 
 if os.path.exists(env_path):
-    print("✅ .env file found")
+    print("Γ£à .env file found")
     with open(env_path, 'r') as f:
         print("Contents of .env file:", f.read()[:100] + "..." if os.path.getsize(env_path) > 100 else f.read())
 else:
-    print("❌ .env file not found")
+    print("Γ¥î .env file not found")
 
 # Load environment variables
 load_dotenv(env_path, override=True)
@@ -419,7 +422,7 @@ async def get_db_pool():
         return pool
         
     except Exception as e:
-        logger.error(f"❌ Error creating database connection pool: {str(e)}")
+        logger.error(f"Γ¥î Error creating database connection pool: {str(e)}")
         logger.error(f"Using DATABASE_URL: {DATABASE_URL.split('@')[-1] if '@' in DATABASE_URL else '***'}")
         logger.error(traceback.format_exc())
         raise
@@ -599,7 +602,7 @@ def decrypt_fernet(encrypted_data: str) -> str:
         decrypted = f.decrypt(encrypted_data.encode())
         return decrypted.decode('utf-8')
     except Exception as e:
-        print(f"❌ Decryption error: {e}")
+        print(f"Γ¥î Decryption error: {e}")
         print(f"   Input length: {len(encrypted_data)}")
         print(f"   Input starts with: {encrypted_data[:10]}..." if len(encrypted_data) > 10 else "   Input too short")
         raise ValueError(f"Failed to decrypt password: {e}")
@@ -845,7 +848,7 @@ async def process_email_folder(mail, folder: str, email_address: str, pool, max_
         # Default to max_age_days if no last_processed date
         if last_processed:
             since_date = last_processed.strftime('%d-%b-%Y')
-            print(f"   📅 Processing emails since last processed date: {since_date}")
+            print(f"   ≡ƒôà Processing emails since last processed date: {since_date}")
         else:
             # Fallback to max_age_days if no last_processed date
             try:
@@ -853,25 +856,25 @@ async def process_email_folder(mail, folder: str, email_address: str, pool, max_
             except (TypeError, ValueError):
                 max_days = 30  # Default to 30 days if invalid
             since_date = (datetime.now(timezone.utc) - timedelta(days=max_days)).strftime('%d-%b-%Y')
-            print(f"   ⏳ No previous processed date found, using last {max_days} days")
+            print(f"   ΓÅ│ No previous processed date found, using last {max_days} days")
             
         # Select the folder
         print(f"   Checking {folder}...")
         try:
             status, _ = mail.select(folder, readonly=True)
             if status != 'OK':
-                print(f"   ❌ Could not select {folder} (status: {status})")
+                print(f"   Γ¥î Could not select {folder} (status: {status})")
                 return error_count + 1
         except Exception as e:
             error_msg = f"Error selecting {folder}: {str(e)}"
-            print(f"   ❌ {error_msg}")
+            print(f"   Γ¥î {error_msg}")
             await log_error(pool, email_address, 'folder_error', error_msg, folder=folder)
             return error_count + 1
         
         try:
             # Search for unread messages since the last processed date
             search_criteria = f'(SINCE "{since_date}" UNSEEN)'
-            print(f"   🔍 Search criteria: {search_criteria}")
+            print(f"   ≡ƒöì Search criteria: {search_criteria}")
             
             status, messages = mail.search(None, search_criteria)
             
@@ -893,22 +896,22 @@ async def process_email_folder(mail, folder: str, email_address: str, pool, max_
                 except Exception as e:
                     error_count += 1
                     error_msg = f"Error processing message {num} in {folder}: {str(e)}"
-                    print(f"   ❌ {error_msg}")
+                    print(f"   Γ¥î {error_msg}")
                     await log_error(pool, email_address, 'message_processing_error', error_msg, folder=folder)
                     
                     # If we hit too many errors, stop processing this folder
                     if error_count >= 5:  # Adjust this threshold as needed
-                        print(f"   ⚠️  Too many errors ({error_count}), stopping processing of {folder}")
+                        print(f"   ΓÜá∩╕Å  Too many errors ({error_count}), stopping processing of {folder}")
                         break
                 
         except Exception as e:
             error_msg = f"Error processing messages in {folder}: {str(e)}"
-            print(f"   ❌ {error_msg}")
+            print(f"   Γ¥î {error_msg}")
             await log_error(pool, email_address, 'folder_processing_error', error_msg, folder=folder)
             
     except Exception as e:
         error_msg = f"Unexpected error in process_email_folder: {str(e)}"
-        print(f"   ❌ {error_msg}")
+        print(f"   Γ¥î {error_msg}")
         await log_error(pool, email_address, 'unexpected_error', error_msg, folder=folder)
     
     return error_count  # Return the error count for monitoring
@@ -956,7 +959,7 @@ def save_attachments(msg, message_id: str) -> List[Dict[str, Any]]:
             # Check attachment size
             payload = part.get_payload(decode=True)
             if len(payload) > MAX_ATTACHMENT_SIZE:
-                print(f"   ⚠️ Attachment {filename} exceeds size limit, skipping")
+                print(f"   ΓÜá∩╕Å Attachment {filename} exceeds size limit, skipping")
                 continue
                 
             # Save attachment
@@ -971,7 +974,7 @@ def save_attachments(msg, message_id: str) -> List[Dict[str, Any]]:
             })
             
         except Exception as e:
-            print(f"   ❌ Error saving attachment {filename}: {str(e)}")
+            print(f"   Γ¥î Error saving attachment {filename}: {str(e)}")
             continue
             
     return attachments
@@ -1001,7 +1004,7 @@ async def process_single_email(mail, num: str, email_address: str, folder: str, 
                     raise
                 await asyncio.sleep(2 ** attempt)  # Exponential backoff
         else:
-            print(f"   ❌ Could not fetch message {num} after 3 attempts")
+            print(f"   Γ¥î Could not fetch message {num} after 3 attempts")
             return
             
         raw_email = msg_data[0][1]
@@ -1020,7 +1023,7 @@ async def process_single_email(mail, num: str, email_address: str, folder: str, 
         
         # Check if we've already processed this message
         if await is_duplicate(pool, message_id, email_address):
-            print(f"   ⏩ Skipping duplicate message: {message_id}")
+            print(f"   ΓÅ⌐ Skipping duplicate message: {message_id}")
             return
         
         # Extract body and attachments
@@ -1062,39 +1065,39 @@ async def process_single_email(mail, num: str, email_address: str, folder: str, 
                 # Send to webhook with retry logic
                 async with httpx.AsyncClient() as client:
                     await send_to_webhook(client, N8N_WEBHOOK_URL, payload)
-                print(f"   ✅ Forwarded to webhook: {message_id}")
+                print(f"   Γ£à Forwarded to webhook: {message_id}")
             except Exception as e:
                 error_msg = f"Failed to send to webhook: {str(e)}"
-                print(f"   ❌ {error_msg}")
+                print(f"   Γ¥î {error_msg}")
                 await log_error(pool, email_address, 'webhook_error', error_msg, message_id, folder)
         else:
-            print(f"   ⏩ Skipped spam email (score: {spam_analysis['score']}): {message_id}")
+            print(f"   ΓÅ⌐ Skipped spam email (score: {spam_analysis['score']}): {message_id}")
             
         # Mark email as read after processing
         try:
             mail.store(num, '+FLAGS', '\\Seen')
-            print(f"   ✅ Marked message as read: {message_id}")
+            print(f"   Γ£à Marked message as read: {message_id}")
         except Exception as e:
             error_msg = f"Could not mark message as read: {str(e)}"
-            print(f"   ⚠️ {error_msg}")
+            print(f"   ΓÜá∩╕Å {error_msg}")
             await log_error(pool, email_address, 'mark_read_error', error_msg, message_id, folder)
         
-        print(f"   ✅ Processed message from {sender} "
+        print(f"   Γ£à Processed message from {sender} "
               f"({'SPAM' if is_spam_message else 'Inbox'}, "
               f"{len(attachments)} attachments, score: {spam_analysis['score']})")
         
     except httpx.HTTPStatusError as e:
-        print(f"   ❌ HTTP error sending to webhook: {e.response.status_code} - {e.response.text}")
+        print(f"   Γ¥î HTTP error sending to webhook: {e.response.status_code} - {e.response.text}")
     except (socket.timeout, asyncio.TimeoutError):
-        print("   ⏱️  Request timed out")
+        print("   ΓÅ▒∩╕Å  Request timed out")
     except imaplib.IMAP4.error as e:
         error_msg = f"IMAP Error: {str(e)}"
-        print(f"   ❌ {error_msg}")
+        print(f"   Γ¥î {error_msg}")
         await log_error(pool, email_address, 'imap_error', error_msg)
         error_count += 1
     except Exception as e:
         error_msg = f"Unexpected error: {str(e)}"
-        print(f"   ❌ {error_msg}")
+        print(f"   Γ¥î {error_msg}")
         await log_error(pool, email_address, 'unexpected_error', error_msg)
         error_count += 1
     finally:
@@ -1122,17 +1125,17 @@ async def process_inbox(cred, pool):
     last_metrics_time = time.time()
     
     # Log the connection attempt
-    print(f"\n🔍 Processing email: {email_address}")
+    print(f"\n≡ƒöì Processing email: {email_address}")
     print(f"   Connecting to {host}:{port} (SSL: {use_ssl})...")
     
     # Check rate limiting
     if await is_rate_limited(pool, email_address):
-        print(f"   ⚠️  Rate limited for {email_address}, skipping this cycle")
+        print(f"   ΓÜá∩╕Å  Rate limited for {email_address}, skipping this cycle")
         await log_metric(pool, 'rate_limit_hit', 1, email_address)
         return
 
     try:
-        print("\n🔍 Processing email:")
+        print("\n≡ƒöì Processing email:")
         print(email_address)
         print(f"   Connecting to {host}:{port}...")
         
@@ -1151,7 +1154,7 @@ async def process_inbox(cred, pool):
                 # Upgrade to SSL/TLS if server supports STARTTLS
                 mail.starttls(ssl_context=ssl.create_default_context())
             
-            print(f"   ✅ Connected to {host}:{port} (SSL: {use_ssl})")
+            print(f"   Γ£à Connected to {host}:{port} (SSL: {use_ssl})")
             
             # Log server capabilities for debugging
             try:
@@ -1160,12 +1163,12 @@ async def process_inbox(cred, pool):
                     # Handle both string and bytes in capabilities
                     if isinstance(capabilities, list) and capabilities and isinstance(capabilities[0], bytes):
                         capabilities = [cap.decode('utf-8', errors='replace') for cap in capabilities]
-                    print(f"   🔧 Server capabilities: {' '.join(capabilities) if capabilities else 'None'}")
+                    print(f"   ≡ƒöº Server capabilities: {' '.join(capabilities) if capabilities else 'None'}")
             except Exception as cap_error:
-                print(f"   ⚠️  Could not retrieve server capabilities: {str(cap_error)}")
+                print(f"   ΓÜá∩╕Å  Could not retrieve server capabilities: {str(cap_error)}")
                 
             # Attempt login with better error reporting
-            print(f"   🔐 Attempting login as {email_address}...")
+            print(f"   ≡ƒöÉ Attempting login as {email_address}...")
             
             # Ensure email and password are strings, not bytes
             if isinstance(email_address, bytes):
@@ -1176,7 +1179,7 @@ async def process_inbox(cred, pool):
             
             # Ensure we have a valid password
             if not password:
-                print("❌ Error: No password provided")
+                print("Γ¥î Error: No password provided")
                 return False
                 
             # Get the password from credentials
@@ -1187,12 +1190,12 @@ async def process_inbox(cred, pool):
             
             # Verify we have a password
             if not password:
-                print("\n❌ ERROR: No password provided for login")
+                print("\nΓ¥î ERROR: No password provided for login")
                 await log_error(pool, email_address, 'login_error', 'No password provided')
                 return False
                 
             if is_encrypted:
-                print("\n⚠️  WARNING: Password appears to be encrypted but should be decrypted by now!")
+                print("\nΓÜá∩╕Å  WARNING: Password appears to be encrypted but should be decrypted by now!")
                 print("   The password should be decrypted in fetch_credentials() before reaching this point.")
                 print("   This suggests an issue with the decryption process.")
             
@@ -1243,15 +1246,15 @@ async def process_inbox(cred, pool):
                 return False
                 
                 if 'auth' in error_msg or 'oauth' in error_msg.lower():
-                    print("   ❌ Authentication failed")
+                    print("   Γ¥î Authentication failed")
                     print("      This account may require OAuth2 authentication")
                     print("      Consider using OAuth2 for authentication")
                 else:
-                    print(f"   ❌ Login failed: {str(login_error)}")
+                    print(f"   Γ¥î Login failed: {str(login_error)}")
                 raise
                 
         except Exception as e:
-            print(f"   ❌ Connection error: {str(e)}")
+            print(f"   Γ¥î Connection error: {str(e)}")
             print("      Please check:")
             print(f"      1. Server {host} is reachable")
             print(f"      2. Port {port} is open and accepting connections")
@@ -1259,30 +1262,30 @@ async def process_inbox(cred, pool):
             raise
                 
         except ssl.SSLError as e:
-            print(f"   ❌ SSL/TLS Error: {str(e)}")
+            print(f"   Γ¥î SSL/TLS Error: {str(e)}")
             print("      This might be due to:")
             print("      1. Outdated SSL/TLS configuration on the server")
             print("      2. Missing or invalid SSL certificates")
             print("      3. Server not supporting secure connections")
             raise
         except socket.gaierror:
-            print(f"   ❌ Network Error: Could not resolve host '{host}'")
+            print(f"   Γ¥î Network Error: Could not resolve host '{host}'")
             print(f"      Please verify the IMAP server address is correct")
             raise
         except socket.timeout:
-            print(f"   ❌ Connection timed out while connecting to {host}:{port}")
+            print(f"   Γ¥î Connection timed out while connecting to {host}:{port}")
             print("      Possible causes:")
             print("      1. Network connectivity issues")
             print(f"      2. Firewall blocking port {port}")
             print("      3. Server not responding")
             raise
         except ConnectionRefusedError:
-            print(f"   ❌ Connection refused by {host}:{port}")
+            print(f"   Γ¥î Connection refused by {host}:{port}")
             print("      The server is not accepting connections on this port")
             print(f"      Verify that {host} is the correct IMAP server and port {port} is open")
             raise
         except Exception as e:
-            print(f"   ❌ Connection error: {str(e)}")
+            print(f"   Γ¥î Connection error: {str(e)}")
             print("      Please check:")
             print(f"      1. Server {host} is reachable")
             print(f"      2. Port {port} is open and accepting connections")
@@ -1300,7 +1303,7 @@ async def process_inbox(cred, pool):
         try:
             for folder in folders_to_check:
                 if time.time() - start_time > MONITORING['max_processing_time']:
-                    print(f"   ⏱️  Processing time limit reached for {email_address}")
+                    print(f"   ΓÅ▒∩╕Å  Processing time limit reached for {email_address}")
                     break
                     
                 try:
@@ -1313,7 +1316,7 @@ async def process_inbox(cred, pool):
                             # For standard folders like INBOX
                             folder_name = folder
                         
-                        print(f"   📂 Processing folder: {folder_name}")
+                        print(f"   ≡ƒôé Processing folder: {folder_name}")
                         folder_errors = await process_email_folder(mail, folder_name, email_address, pool)
                         
                         if folder_errors is not None:  # Only process if we got a valid error count
@@ -1323,32 +1326,32 @@ async def process_inbox(cred, pool):
                                 error_count += folder_errors
                                 # If we hit too many errors, stop processing this email account
                                 if error_count >= 10:  # Adjust this threshold as needed
-                                    print(f"   ⚠️  Too many errors ({error_count}), stopping processing for {email_address}")
+                                    print(f"   ΓÜá∩╕Å  Too many errors ({error_count}), stopping processing for {email_address}")
                                     raise Exception("Too many errors in folder processing")
                     except Exception as e:
                         error_count += 1
-                        print(f"   ❌ Error processing folder {folder}: {str(e)}")
+                        print(f"   Γ¥î Error processing folder {folder}: {str(e)}")
                         if error_count >= 10:
-                            print(f"   ⚠️  Too many errors ({error_count}), stopping processing for {email_address}")
+                            print(f"   ΓÜá∩╕Å  Too many errors ({error_count}), stopping processing for {email_address}")
                             raise
                             
                 except asyncio.TimeoutError:
-                    print(f"   ⏱️  Timeout listing folders for {email_address}")
+                    print(f"   ΓÅ▒∩╕Å  Timeout listing folders for {email_address}")
                     continue
                 except Exception as e:
-                    print(f"   ❌ Error checking folder {folder}: {str(e)}")
+                    print(f"   Γ¥î Error checking folder {folder}: {str(e)}")
                     error_count += 1
                     continue
                     
         except Exception as e:
-            print(f"   ❌ Unexpected error processing {email_address}: {str(e)}")
+            print(f"   Γ¥î Unexpected error processing {email_address}: {str(e)}")
             error_count += 1
             
         # Log metrics periodically
         current_time = time.time()
         if current_time - last_metrics_time > MONITORING['metrics_interval']:
             duration = current_time - start_time
-            print(f"   📊 Metrics for {email_address} - "
+            print(f"   ≡ƒôè Metrics for {email_address} - "
                   f"Processed: {processed_count}, "
                   f"Errors: {error_count}, "
                   f"Duration: {duration:.1f}s")
@@ -1366,15 +1369,15 @@ async def process_inbox(cred, pool):
 
     except imaplib.IMAP4.error as e:
         error_msg = f"IMAP Error: {str(e)}"
-        print(f"   ❌ {error_msg}")
+        print(f"   Γ¥î {error_msg}")
         await log_error(pool, email_address, 'imap_error', error_msg)
     except socket.gaierror as e:
-        print(f"   ❌ Network Error: Could not resolve host '{host}'. Please check the IMAP server address.")
+        print(f"   Γ¥î Network Error: Could not resolve host '{host}'. Please check the IMAP server address.")
     except socket.timeout:
-        print(f"   ❌ Connection timed out while connecting to {host}:{port}")
+        print(f"   Γ¥î Connection timed out while connecting to {host}:{port}")
     except Exception as e:
         error_msg = f"Unexpected error: {str(e)}"
-        print(f"   ❌ {error_msg}")
+        print(f"   Γ¥î {error_msg}")
         await log_error(pool, email_address, 'unexpected_error', error_msg)
     finally:
         # Logout and close connection
@@ -1383,7 +1386,7 @@ async def process_inbox(cred, pool):
                 mail.logout()
             except Exception as e:
                 error_msg = f"Error during logout: {str(e)}"
-                print(f"   ⚠️  {error_msg}")
+                print(f"   ΓÜá∩╕Å  {error_msg}")
                 await log_error(pool, email_address, 'logout_error', error_msg)
 
 async def poll_emails(pool):
@@ -1598,7 +1601,7 @@ if __name__ == "__main__":
     
     try:
         logger.info("=" * 50)
-        logger.info("🚀 Starting IMAP Poller Service")
+        logger.info("≡ƒÜÇ Starting IMAP Poller Service")
         logger.info(f"Python version: {sys.version}")
         logger.info(f"Current time: {datetime.now(timezone.utc).isoformat()}")
         logger.info(f"Working directory: {os.getcwd()}")
@@ -1619,7 +1622,7 @@ if __name__ == "__main__":
         while restart_count < max_restarts:
             try:
                 logger.info("\n" + "="*50)
-                logger.info(f"🚀 Starting IMAP poller (attempt {restart_count + 1}/{max_restarts})")
+                logger.info(f"≡ƒÜÇ Starting IMAP poller (attempt {restart_count + 1}/{max_restarts})")
                 logger.info(f"Start time: {datetime.now(timezone.utc).isoformat()}")
                 
                 asyncio.run(main())
@@ -1629,7 +1632,7 @@ if __name__ == "__main__":
                 break
                 
             except KeyboardInterrupt:
-                logger.info("\n🛑 Received keyboard interrupt. Shutting down gracefully...")
+                logger.info("\n≡ƒ¢æ Received keyboard interrupt. Shutting down gracefully...")
                 break
                 
             except Exception as e:
@@ -1641,13 +1644,13 @@ if __name__ == "__main__":
                     logger.critical(f"Maximum restart attempts ({max_restarts}) reached. Shutting down...")
                     break
                     
-                logger.info(f"🔄 Restarting in {restart_delay} seconds...")
+                logger.info(f"≡ƒöä Restarting in {restart_delay} seconds...")
                 time.sleep(restart_delay)
                 
                 # Exponential backoff for restart delay
                 restart_delay = min(300, restart_delay * 2)  # Cap at 5 minutes
         
-        logger.info("👋 IMAP Poller Service stopped")
+        logger.info("≡ƒæï IMAP Poller Service stopped")
         
     except Exception as e:
         logger.critical(f"Fatal error in main process: {str(e)}", exc_info=True)

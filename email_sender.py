@@ -37,6 +37,27 @@ async def healthz():
     """Health check endpoint for Render (matches their default path)"""
     return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
 
+@app.get("/trigger-polling")
+async def trigger_polling():
+    """
+    Trigger manual email polling.
+    This endpoint will start the email polling process for all configured accounts.
+    """
+    from imap_poller import poll_emails, get_db_pool
+    import asyncio
+    
+    try:
+        logger.info("Manual email polling triggered via API")
+        pool = await get_db_pool()
+        await poll_emails(pool)
+        return {"status": "success", "message": "Email polling completed successfully"}
+    except Exception as e:
+        logger.error(f"Error during manual email polling: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={"status": "error", "message": f"Failed to trigger email polling: {str(e)}"}
+        )
+
 # Load environment variables from .env file
 load_dotenv()
 

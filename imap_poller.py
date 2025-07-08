@@ -90,13 +90,26 @@ import os
 # Print current working directory for debugging
 print(f"Current working directory: {os.getcwd()}")
 
+# Set default attachments directory and max size (10MB)
+ATTACHMENTS_DIR = os.getenv('ATTACHMENTS_DIR', os.path.join(os.path.dirname(__file__), 'attachments'))
+MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024  # 10MB in bytes
+os.makedirs(ATTACHMENTS_DIR, exist_ok=True)
+
+# Connection settings
+IMAP_TIMEOUT = 30  # seconds
+MAX_RETRY_ATTEMPTS = 2
+
+print(f"📁 Attachments will be saved to: {ATTACHMENTS_DIR}")
+print(f"📏 Max attachment size: {MAX_ATTACHMENT_SIZE/(1024*1024):.1f}MB")
+print(f"⏱️  Connection timeout: {IMAP_TIMEOUT} seconds")
+
 # Load environment variables from .env file
 print("≡ƒöì Loading environment variables...")
 env_path = os.path.join(os.path.dirname(__file__), '.env')
 print(f"Looking for .env file at: {env_path}")
 
 if os.path.exists(env_path):
-    print("Γ£à .env file found")
+    print("✅ .env file found")
     with open(env_path, 'r') as f:
         print("Contents of .env file:", f.read()[:100] + "..." if os.path.getsize(env_path) > 100 else f.read())
 else:
@@ -179,7 +192,7 @@ CREATE TABLE IF NOT EXISTS email_metrics (
 );
 """
 
-N8N_WEBHOOK_URL = "https://shri003.app.n8n.cloud/webhook/email-in/"  # Replace with actual
+N8N_WEBHOOK_URL = "https://shrinidhi-thor.app.n8n.cloud/webhook/email-in"  # Replace with actual
 
 # Decode email subject safely
 def decode_mime_words(s):

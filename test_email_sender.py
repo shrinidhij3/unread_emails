@@ -2,7 +2,8 @@ import os
 import sys
 import asyncio
 import logging
-from email_sender import send_email, EmailRequest, MailingAddress, app
+from email_sender import send_email, EmailRequest, app
+from smtp_sender import DEFAULT_MAILING_ADDRESS
 
 # Configure logging
 logging.basicConfig(
@@ -25,7 +26,7 @@ async def test_send_email():
         html="<h1>Test Email</h1><p>This is a <strong>test email</strong> from the local test script.</p>",
         smtp_host=os.getenv('TEST_SMTP_HOST', 'smtp.gmail.com'),
         smtp_port=int(os.getenv('TEST_SMTP_PORT', '587')),
-        mailing_address=MailingAddress()
+        mailing_address=DEFAULT_MAILING_ADDRESS
     )
     
     logger.info(f"Testing with sender: {test_data.sender}")

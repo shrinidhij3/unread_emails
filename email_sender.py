@@ -166,15 +166,6 @@ def decrypt_fernet(encrypted_data: str) -> str:
         raise ValueError(error_msg)
 
 # Models
-class MailingAddress(BaseModel):
-    name: str = "Thorsignia"
-    address_line1: str = "123 Business Street"
-    address_line2: Optional[str] = None
-    city: str = "Bangalore"
-    state: str = "Karnataka"
-    postal_code: str = "560001"
-    country: str = "India"
-
 class EmailRequest(BaseModel):
     sender: EmailStr
     password: str
@@ -185,31 +176,43 @@ class EmailRequest(BaseModel):
     smtp_host: str = "smtp.gmail.com"
     smtp_port: int = 587
     reply_to: Optional[EmailStr] = None
-    mailing_address: Optional[MailingAddress] = None
 
-def format_mailing_address(address: Optional[MailingAddress] = None) -> str:
-    """Format a mailing address from a MailingAddress model."""
-    if not address:
-        address = MailingAddress()
+def format_mailing_address(address: Optional[dict] = None) -> str:
+    """Format a mailing address from a dictionary."""
+    if address is None:
+        from smtp_sender import DEFAULT_MAILING_ADDRESS
+        address = DEFAULT_MAILING_ADDRESS
+        
+    # Build address components
+    lines = [
+        address.get('name', '').strip(),
+        address.get('address_line1', '').strip(),
+        address.get('address_line2', '').strip()
+    ]
     
-    lines = [address.name]
-    if address.address_line1:
-        lines.append(address.address_line1)
-    if address.address_line2:
-        lines.append(address.address_line2)
+    # Add city, state, and postal code on one line if any exist
+    city = address.get('city', '').strip()
+    state = address.get('state', '').strip()
+    postal_code = address.get('postal_code', '').strip()
     
-    city_line = []
-    if address.city:
-        city_line.append(address.city)
-    if address.state:
-        city_line.append(address.state)
-    if address.postal_code:
-        city_line.append(address.postal_code)
+    location_parts = []
+    if city:
+        location_parts.append(city)
+    if state:
+        location_parts.append(state)
+    if postal_code:
+        location_parts.append(postal_code)
+        
+    if location_parts:
+        lines.append(", ".join(location_parts))
     
-    lines.append(", ".join(city_line))
-    if address.country:
-        lines.append(address.country)
+    # Add country if it exists
+    country = address.get('country', '').strip()
+    if country:
+        lines.append(country)
     
+    # Remove any empty lines
+    lines = [line for line in lines if line]
     return "\n".join(lines)
 
 @app.post("/send-email")
@@ -285,8 +288,7 @@ async def send_email(email_data: EmailRequest, request: Request):
         msg['Date'] = email_utils.formatdate(localtime=True)
         msg['Message-ID'] = email_utils.make_msgid(domain=email_data.sender.split('@')[-1])
         
-        # Add unsubscribe header
-        msg['List-Unsubscribe'] = f'<mailto:{reply_to}?subject=Unsubscribe>'
+        # Removed unsubscribe header as per request
         
         # Handle plain text content
         message_body = email_data.message
@@ -318,8 +320,6 @@ async def send_email(email_data: EmailRequest, request: Request):
                 <div style="max-width: 600px; margin: 0 auto;">
                     {email_data.html}
                     <p style="margin-top: 30px; font-size: 12px; color: #777; border-top: 1px solid #eee; padding-top: 10px;">
-                        <a href="mailto:{reply_to}?subject=Unsubscribe" style="color: #0066cc; text-decoration: none;">Unsubscribe</a>
-                        <span style="color: #ddd; margin: 0 10px;">|</span>
                         {formatted_address.replace(chr(10), '<br>')}
                     </p>
                 </div>

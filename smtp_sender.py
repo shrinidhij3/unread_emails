@@ -103,7 +103,7 @@ def send_email():
         
         # Basic headers only
         msg['Subject'] = subject
-        msg['From'] = f'Thorsignia Support <{sender_email}>'
+        msg['From'] = f'<{sender_email}>'
         msg['To'] = recipient_email
         msg['Reply-To'] = reply_to
         msg['Date'] = email.utils.formatdate(localtime=True)

@@ -86,6 +86,58 @@ A robust and flexible email synchronization service that supports multiple email
    - Swagger UI: http://localhost:8000/docs
    - ReDoc: http://localhost:8000/redoc
 
+## Deployment
+
+### Deploying to Render.com
+
+1. **Create a new Web Service**
+   - Go to your Render dashboard and click "New +" then select "Web Service"
+   - Connect your GitHub/GitLab repository or deploy manually
+
+2. **Configure Build & Deploy**
+   - **Name**: Choose a name for your service (e.g., `email-sync-service`)
+   - **Region**: Select the region closest to your users
+   - **Branch**: Select your main branch
+   - **Build Command**: `pip install -r requirements.txt`
+   - **Start Command**: `uvicorn email_sender:app --host 0.0.0.0 --port $PORT`
+
+3. **Environment Variables**
+   Add the following environment variables in the Render dashboard:
+   ```
+   # Required
+   PORT=10000
+   DATABASE_URL=postgresql://user:password@host:5432/dbname
+   ENCRYPTION_KEY=your_secure_encryption_key
+   
+   # SMTP Settings (example for Gmail)
+   SMTP_HOST=smtp.gmail.com
+   SMTP_PORT=587
+   
+   # IMAP Settings (example for Gmail)
+   IMAP_SERVER=imap.gmail.com
+   IMAP_PORT=993
+   
+   # Optional
+   LOG_LEVEL=INFO
+   EMAIL_RETENTION_DAYS=30
+   PROCESSING_BATCH_SIZE=50
+   
+   # For Gmail, you might need an App Password
+   # See: https://support.google.com/accounts/answer/185833
+   ```
+
+4. **Database**
+   - Create a new PostgreSQL database on Render
+   - Copy the external database URL and set it as `DATABASE_URL`
+
+5. **Deploy**
+   - Click "Create Web Service" to deploy your application
+   - Monitor the logs for any deployment issues
+
+6. **Verify Deployment**
+   - Once deployed, visit `https://your-service-name.onrender.com/health`
+   - You should see a `{"status":"healthy"}` response
+
 ## API Endpoints
 
 ### Email Accounts

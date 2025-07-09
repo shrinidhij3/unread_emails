@@ -1,4 +1,4 @@
-#!/usr/bin/env pythonn
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
 import asyncio

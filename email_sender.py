@@ -166,6 +166,14 @@ def decrypt_fernet(encrypted_data: str) -> str:
         raise ValueError(error_msg)
 
 # Models
+class MailingAddress(BaseModel):
+    name: Optional[str] = None
+    street: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    postal_code: Optional[str] = None
+    country: Optional[str] = None
+
 class EmailRequest(BaseModel):
     sender: EmailStr
     password: str
@@ -176,19 +184,27 @@ class EmailRequest(BaseModel):
     smtp_host: str = "smtp.gmail.com"
     smtp_port: int = 587
     reply_to: Optional[EmailStr] = None
+    mailing_address: Optional[MailingAddress] = None
+    password_encrypted: bool = False  # Flag to indicate if password is encrypted
 
-def format_mailing_address(address: Optional[dict] = None) -> str:
-    """Format a mailing address from a dictionary."""
-    if address is None:
-        from smtp_sender import DEFAULT_MAILING_ADDRESS
-        address = DEFAULT_MAILING_ADDRESS
+def format_mailing_address(address: dict) -> str:
+    """Format a mailing address from a dictionary.
+    
+    Args:
+        address: Dictionary containing address components (name, street, city, state, postal_code, country)
+        
+    Returns:
+        Formatted address string with each component on a new line
+    """
+    if not address:
+        return ""
         
     # Build address components
-    lines = [
-        address.get('name', '').strip(),
-        address.get('address_line1', '').strip(),
-        address.get('address_line2', '').strip()
-    ]
+    lines = []
+    if address.get('name'):
+        lines.append(address['name'].strip())
+    if address.get('street'):
+        lines.append(address['street'].strip())
     
     # Add city, state, and postal code on one line if any exist
     city = address.get('city', '').strip()
@@ -207,12 +223,9 @@ def format_mailing_address(address: Optional[dict] = None) -> str:
         lines.append(", ".join(location_parts))
     
     # Add country if it exists
-    country = address.get('country', '').strip()
-    if country:
-        lines.append(country)
+    if address.get('country'):
+        lines.append(address['country'].strip())
     
-    # Remove any empty lines
-    lines = [line for line in lines if line]
     return "\n".join(lines)
 
 @app.post("/send-email")
@@ -282,9 +295,9 @@ async def send_email(email_data: EmailRequest, request: Request):
         
         # Set basic headers
         msg['Subject'] = email_data.subject
-        msg['From'] = email_utils.formataddr(('Thorsignia Support', email_data.sender))
+        msg['From'] = email_utils.formataddr(('', email_data.sender))  # Empty name, just use email
         msg['To'] = email_data.recipient
-        msg['Reply-To'] = email_utils.formataddr(('Thorsignia Support', reply_to))
+        msg['Reply-To'] = email_utils.formataddr(('', reply_to))  # Empty name, just use email
         msg['Date'] = email_utils.formatdate(localtime=True)
         msg['Message-ID'] = email_utils.make_msgid(domain=email_data.sender.split('@')[-1])
         
@@ -306,7 +319,16 @@ async def send_email(email_data: EmailRequest, request: Request):
         
         # Add HTML part if provided
         if email_data.html:
-            formatted_address = format_mailing_address(email_data.mailing_address)
+            # Only include address if mailing_address is provided and has content
+            address_section = ""
+            if email_data.mailing_address and any(email_data.mailing_address.dict().values()):
+                formatted_address = format_mailing_address(email_data.mailing_address.dict())
+                address_section = f"""
+                    <p style="margin-top: 30px; font-size: 12px; color: #777; border-top: 1px solid #eee; padding-top: 10px;">
+                        {formatted_address.replace(chr(10), '<br>')}
+                    </p>
+                """
+            
             reply_to = email_data.reply_to or email_data.sender
             
             html_content = f"""
@@ -319,9 +341,7 @@ async def send_email(email_data: EmailRequest, request: Request):
             <body style="margin: 0; padding: 20px; font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
                 <div style="max-width: 600px; margin: 0 auto;">
                     {email_data.html}
-                    <p style="margin-top: 30px; font-size: 12px; color: #777; border-top: 1px solid #eee; padding-top: 10px;">
-                        {formatted_address.replace(chr(10), '<br>')}
-                    </p>
+                    {address_section}
                 </div>
             </body>
             </html>
@@ -353,8 +373,23 @@ async def send_email(email_data: EmailRequest, request: Request):
             clean_recipient = email_data.recipient
             clean_sender = email_data.sender
         
-        # Decrypt the password if it's encrypted
+        # Get the password (decrypt if needed)
         password = email_data.password
+        if email_data.password_encrypted:
+            try:
+                password = decrypt_fernet(password)
+                logger.debug("Successfully decrypted password")
+            except Exception as e:
+                error_msg = f"Failed to decrypt password: {str(e)}"
+                logger.error(error_msg)
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "status": "error",
+                        "error": error_msg,
+                        "type": "DecryptionError"
+                    }
+                )
         logger.debug("Password received (first 5 chars): %s", 
                    password[:5] + '...' if password and len(password) > 5 else str(password))
         
@@ -418,7 +453,7 @@ async def send_email(email_data: EmailRequest, request: Request):
                 try:
                     logger.debug("Updating email headers...")
                     if 'From' in msg:
-                        from_header = email_utils.formataddr(('Thorsignia Support', clean_sender))
+                        from_header = email_utils.formataddr(('', clean_sender))  # Empty name, just use email
                         msg.replace_header('From', from_header)
                         logger.debug("Updated From header: %s", from_header)
                     if 'To' in msg:
@@ -472,44 +507,26 @@ async def send_email(email_data: EmailRequest, request: Request):
         import traceback
         import sys
         from typing import Type, Any
-        
-        # Get the full traceback
-        exc_type, exc_value, exc_traceback = sys.exc_info()
-        
-        # Format the traceback
-        tb_list = traceback.format_exception(exc_type, exc_value, exc_traceback)
-        formatted_traceback = ''.join(tb_list)
-        
-        # Log the full error with traceback
-        logger.critical("\n" + "="*50 + " CRITICAL ERROR " + "="*50)
-        logger.critical("Error Type: %s", type(e).__name__)
-        logger.critical("Error Message: %s", str(e))
-        logger.critical("\nTraceback:\n%s", formatted_traceback)
-        
-        # Log additional context
-        logger.critical("\nError Context:")
-        logger.critical("- SMTP Host: %s", email_data.smtp_host if 'email_data' in locals() else 'N/A')
-        logger.critical("- Sender: %s", email_data.sender if 'email_data' in locals() else 'N/A')
-        logger.critical("- Recipient: %s", email_data.recipient if 'email_data' in locals() else 'N/A')
-        
-        logger.critical("="*108 + "\n")
-        
-        # Also print to stderr for immediate visibility
-        print("\n" + "="*50 + " CRITICAL ERROR " + "="*50, file=sys.stderr)
-        print(f"Error Type: {type(e).__name__}", file=sys.stderr)
         print(f"Error Message: {str(e)}", file=sys.stderr)
         print("\nTraceback:", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
         print("\n" + "="*108, file=sys.stderr)
+        
+        # Get the error type
+        error_type = type(e).__name__
+        error_details = str(e)
+        
+        # Log the error
+        logger.critical(f"Failed to send email: {error_type} - {error_details}")
         
         # Return detailed error in response
         raise HTTPException(
             status_code=500,
             detail={
                 "status": "error",
-                "error": f"Failed to send email: {str(e)}",
+                "error": f"Failed to send email: {error_details}",
                 "type": error_type,
-                "details": str(e)  # Include full error details
+                "details": error_details
             }
         )
 

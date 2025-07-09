@@ -11,15 +11,6 @@ from datetime import datetime
 
 app = Flask(__name__)
 
-# Email Configuration
-DEFAULT_MAILING_ADDRESS = {
-    'name': 'Thorsignia',
-    'address_line1': '123 Business Street',
-    'city': 'Bangalore',
-    'state': 'Karnataka',
-    'postal_code': '560001',
-    'country': 'India'
-}
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
